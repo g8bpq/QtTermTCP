@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ColourDialog</class>
+ <widget class="QDialog" name="ColourDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>342</width>
+    <height>407</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Colour Selection</string>
+  </property>
+  <widget class="QWidget" name="layoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>66</x>
+     <y>350</y>
+     <width>199</width>
+     <height>33</height>
+    </rect>
+   </property>
+   <layout class="QHBoxLayout">
+    <property name="spacing">
+     <number>6</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="QPushButton" name="okButton">
+      <property name="text">
+       <string>OK</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="cancelButton">
+      <property name="text">
+       <string>Cancel</string>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QPushButton" name="TermBG">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>15</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="InputBG">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>247</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="InputColour">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>276</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>Input</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="TermNormal">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>44</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>Normal</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="Echoed">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>73</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>Echoed</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="Warning">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>102</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>Warning</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>16</y>
+     <width>187</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Terminal Background    </string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_2">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>45</y>
+     <width>185</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Normal Text</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_3">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>74</y>
+     <width>191</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Echoed Text</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_4">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>103</y>
+     <width>185</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Warning Text</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_9">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>248</y>
+     <width>189</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Input Background    </string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_10">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>277</y>
+     <width>183</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Input Text</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="MonRX">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>189</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>RX Text</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="MonitorBG">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>131</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="MonOther">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>218</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>Other Text</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="MonTX">
+   <property name="geometry">
+    <rect>
+     <x>216</x>
+     <y>160</y>
+     <width>75</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>75</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>75</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>TX Text</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_5">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>132</y>
+     <width>187</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Monitor Background    </string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_6">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>161</y>
+     <width>183</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>TX Text</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_7">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>190</y>
+     <width>187</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>RX Text</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label_8">
+   <property name="geometry">
+    <rect>
+     <x>21</x>
+     <y>219</y>
+     <width>189</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Other Text</string>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

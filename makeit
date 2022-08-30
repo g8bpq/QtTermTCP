@@ -1,0 +1,9 @@
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.cpp ./
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.c ./
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.h ./
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.ui ./
+
+qmake
+make -j4
+cp QtTermTCP /mnt/Source
+

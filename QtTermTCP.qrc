@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/QtTermTCP">
+        <file>QtTermTCP.ico</file>
+    </qresource>
+</RCC>
