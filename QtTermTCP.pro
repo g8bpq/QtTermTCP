@@ -37,8 +37,9 @@ HEADERS  += QtTermTCP.h\
 FORMS    += QtTermTCP.ui\
         ListenPort.ui \
         AGWParams.ui \
-        VARAConfig.ui \
+        % VARAConfig.ui \
         KISSConfig.ui \
+		ColourConfig.ui \
         AGWConnect.ui
 
 RESOURCES += QtTermTCP.qrc
