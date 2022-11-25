@@ -1,6 +1,6 @@
 #include <windows.h>
 
-IDI_ICON1	ICON	DISCARDABLE	"C:\\Users\\John\\OneDrive\\Dev\\Source\\QT\\QtTermTCP\\QtTermTCP.ico"
+IDI_ICON1	ICON	DISCARDABLE	"QtTermTCP.ico"
 
 VS_VERSION_INFO VERSIONINFO
 	FILEVERSION 0,0,0,0

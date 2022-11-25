@@ -33,6 +33,8 @@ int ProcessYAPPMessage(Ui_ListenSession * Sess, UCHAR * Msg, int Len);
 void SetPortMonLine(int i, char * Text, int visible, int enabled);
 void AGW_AX25_data_in(void  * Sess, UCHAR * data, int Len);
 int checkUTF8(unsigned char * Msg, int Len, unsigned char * out);
+void DoTermResize(Ui_ListenSession * Sess);
+void DecodeTeleText(Ui_ListenSession * Sess, char * page);
 
 int Bells = TRUE;
 int StripLF = FALSE;
@@ -40,6 +42,8 @@ int LogMonitor = FALSE;
 int LogOutput = FALSE;
 int SendDisconnected = TRUE;
 int ChatMode = TRUE;
+int AutoTeletext = 1;
+
 int MonPorts = 1;
 int ListenOn = FALSE;
 
@@ -172,6 +176,54 @@ void ProcessReceivedData(Ui_ListenSession * Sess, unsigned char * Buffer, int le
 		ProcessYAPPMessage(Sess, Buffer, len);
 		return;
 	}
+
+	// See if Teletext data
+
+			// We need to identify a viewdata frame. Seems to start
+
+		//1e 0a 0a 0a 0a 0a 0a 0a  0a 0a 0a 0a 0a 0a 0a 0a   ........ ........
+			//00000170  0a 0a 0a 0a 0a 0a 0a 0a  11 0c 1b
+
+		// Page seems to start 1c
+
+		// After page get 
+
+		//1e 0a 0a 0a 0a 0a 0a 0a  0a 0a 0a 0a 0a 0a 0a 0a   ........ ........
+		//	0000049D  0a 0a 0a 0a 0a 0a 0a 0a  11 14 1b 44 1b 5d 1b 43   ........ ...D.].C
+		//	000004AD  53 65 6c 65                                        Sele
+		//	000004B1  63 74 20 69 74 65 6d 20  6f 72 1b 47 2a 70 61 67   ct item or .G*pag
+		//	000004C1  65 5f 20 3a 20 20 20 20  20 20 20 20 20 20 20 20   e_ :
+		//	000004D1  20 0d 09 09 09 09 09 09  09 09 09 09 09 09 09 09    ....... ........
+		//	000004E1  09 09 09 09 09 09 09 09  09 09 09 09 09 11
+
+	Buffer[len] = 0;
+
+	if (AutoTeletext && (Buffer[0] == 0x1e || Buffer[0] == 0x0c))
+	{
+		if (Sess->TTActive == 0)
+		{
+			Sess->TTActive = 1;
+			DoTermResize(Sess);
+		}
+	}
+
+	if (Sess->TTActive)
+	{
+		// Feed to Teletext code
+
+		// We need to decode a whole page. There is no obvious delimiter so process till data stops.
+		// Buffer is cleared when next input is sent
+
+		if (strlen(&Sess->pageBuffer[0] + len) > 4090)
+			Sess->pageBuffer[0] = 0;							// Protect buffer
+
+		strcat(Sess->pageBuffer, (char *)Buffer);
+
+		DecodeTeleText(Sess, (char *)Sess->pageBuffer);			// Re-decode same data until we get the end
+		return;
+	}
+
+
 
 	//	mbstowcs(Buffer, BufferB, len);
 

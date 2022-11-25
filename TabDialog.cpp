@@ -519,6 +519,7 @@ extern QMenu * connectMenu;
 extern QMenu * disconnectMenu;
 
 TAX25Port DummyPort;
+extern "C" TAX25Port * get_user_port_by_calls(int snd_ch, char *  CallFrom, char *  CallTo);
 
 void KISSConnect::myaccept()
 {
@@ -528,6 +529,25 @@ void KISSConnect::myaccept()
 	char Via[128];
 	strcpy(CallTo, wCallTo->currentText().toUpper().toUtf8());
 	strcpy(Via, Digis->text().toUpper().toUtf8());
+
+	TAX25Port * AX25Sess = 0;
+
+	// Check for duplicate session
+
+	AX25Sess = get_user_port_by_calls(0, MYCALL, CallTo);
+
+	if (AX25Sess)
+	{
+		// Duplicate
+
+		char Msg[256];
+
+		int Len = sprintf(Msg, "You already have a session between %s and %s so can't connect\r", MYCALL, CallTo);
+
+		WritetoOutputWindow(ActiveSession, (unsigned char *)Msg, Len);
+//		KISSConnect::accept();
+		return;
+	}
 
 	KISSMode = UIMode->isChecked();
 

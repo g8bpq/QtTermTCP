@@ -2,7 +2,6 @@
 
 #include <QMainWindow>
 #include "ui_QtTermTCP.h"
-//#include "ui_ListenPort.h"
 //#include "ui_AGWParams.h"
 //#include "ui_AGWConnect.h"
 #include "ui_ColourConfig.h"
@@ -62,6 +61,7 @@ public:
 	QTextEdit *termWindow;
 	QTextEdit *monWindow;
 	QLineEdit *inputWindow;
+	QLabel * TTLabel;
 
 	myTcpSocket *clientSocket;
 
@@ -98,11 +98,25 @@ public:
 	char UIDEST[32];
 	char UIPATH[128];
 
+	// For Teletext Emulator
+
+	QImage * TTBitmap;    // TT Image buffer
+	QDialog TTUI;
+
+	int TTActive;
+	int TTFlashToggle;
+	char pageBuffer[4096];
+	QBasicTimer timer;
+
 protected:
 
-private slots:
+	void timerEvent(QTimerEvent *event) override;
 
 private:
+
+
+
+private slots:
 
 };
 
@@ -141,10 +155,13 @@ private slots:
 	void devicereject();
 	void showContextMenuM(const QPoint &pt);
 	void showContextMenuT(const QPoint &pt);
+	void showContextMenuL();
 	void doQuit();
 	void onTEselectionChanged();
 	void onLEselectionChanged();
 	void setSplit();
+	void setVDMode();
+	void showContextMenuMT(const QPoint & pt);
 	void onNewConnection();
 	void onSocketStateChanged(QAbstractSocket::SocketState socketState);
 	void updateWindowMenu();

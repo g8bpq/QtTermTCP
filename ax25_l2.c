@@ -26,6 +26,7 @@ UCHAR TimerEvent = TIMER_EVENT_OFF;
 extern int busy;
 int listenEnable;
 void * KISSSockCopy[4];
+extern UCHAR axMYCALL[7] = "";			// Mycall in ax.25
 
 string * make_frame(string * data, Byte * path, Byte  pid, Byte nr, Byte ns, Byte f_type, Byte f_id, boolean rpt, boolean pf, boolean cr);
 void rst_t3(TAX25Port * AX25Sess);
@@ -1545,6 +1546,11 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 
 		// No Session. If socket is set (so call is in incoming calls list) and SABM set up session
 
+		// Check addresses to us
+
+		if (memcmp(path, axMYCALL, 7) != 0)
+			return;								// ignore
+
 		if (listenEnable == 0)
 		{
 			set_DM(snd_ch, path);
@@ -1583,6 +1589,10 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 		}
 
 		// Must be SABM. See if it would duplicate an existing session (but could it - wouldn't that be found earlier ??
+
+		// Make sure it is for us
+
+
 
 		if (get_user_dupe(snd_ch, path))		// Not SABM or a duplicate call pair
 		{

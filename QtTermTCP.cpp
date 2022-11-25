@@ -1,13 +1,13 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.55"
+#define VersionString "0.0.0.58"
 
 // .12 Save font weight
 // .13 Display incomplete lines (ie without CR)
 // .14 Add YAPP and Listen Mode
 // .15 Reuse windows in Listen Mode 
 // .17 MDI Version 7/1/20
-// .18 Fix inpout window losing focus when data arrives on other window
+// .18 Fix input window losing focus when data arrives on other window
 // .19 Fix Scrollback
 // .20 WinXP compatibility changes
 // .21 Save Window Positions
@@ -60,6 +60,10 @@
 //	   Fix Keepalive  (c)
 // .54 Add option to change screen colours		June 2022
 // .55 Build without optimisation
+// .56 Add Teletext mode						Nov 2022
+// .57 Fix KISS mode incoming call handling
+// .58 Add method to toggle Normal/Teletext Mode
+//	   Fix KISS multiple session protection
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -79,6 +83,7 @@
 #include <QLabel>
 #include <QActionGroup>
 #include <QtWidgets>
+#include <QColor>
 #ifdef USESERIAL
 #include <QtSerialPort/QSerialPort>
 #include <QtSerialPort/QSerialPortInfo>
@@ -98,6 +103,8 @@
 #define MAXPORTS 32
 
 #define UNREFERENCED_PARAMETER(P)          (P)
+
+void DecodeTeleText(Ui_ListenSession * Sess, char * text);
 
 char Host[MAXHOSTS + 1][100] = { "" };
 int Port[MAXHOSTS + 1] = { 0 };
@@ -200,6 +207,8 @@ extern int AlertFreq;
 extern int AlertDuration;
 extern int ConnectBeep;
 
+extern int AutoTeletext;
+
 // AGW Host Interface stuff
 
 int AGWEnable = 0;
@@ -215,7 +224,7 @@ char AGWHost[128] = "127.0.0.1";
 int AGWPortNum = 8000;
 int AGWPaclen = 80;
 extern char * AGWPortList;
-extern myTcpSocket * AGWSock; 
+extern myTcpSocket * AGWSock;
 
 QStringList AGWToCalls;
 
@@ -227,6 +236,7 @@ char KISSHost[128] = "127.0.0.1";
 int KISSPortNum = 1000;
 int KISSBAUD = 19200;
 char MYCALL[32];
+extern "C" UCHAR axMYCALL[7];			// Mycall in ax.25
 
 int KISSMode = 0;			// Connected (0) or UI (1)
 
@@ -348,7 +358,7 @@ QAction * TabSingle = NULL;
 QAction * TabBoth = NULL;
 QAction * TabMon = NULL;
 
-QMenu *monitorMenu; 
+QMenu *monitorMenu;
 QMenu * YAPPMenu;
 QMenu *connectMenu;
 QMenu *disconnectMenu;
@@ -360,6 +370,7 @@ QAction *MonUI;
 QAction *MonColour;
 QAction *MonPort[33];
 QAction *actChatMode;
+QAction *actAutoTeletext;
 QAction *actBells;
 QAction *actStripLF;
 QAction *actIntervalBeep;
@@ -452,9 +463,9 @@ void EncodeSettingsLine(int n, char * String)
 
 // This is used for placing discAction in the preference menu
 #ifdef __APPLE__
-    bool is_mac = true;
+bool is_mac = true;
 #else
-    bool is_mac = false;
+bool is_mac = false;
 #endif
 
 QString GetConfPath()
@@ -521,6 +532,89 @@ void DecodeSettingsLine(int n, char * String)
 
 extern "C" void SendtoAX25(void * conn, unsigned char * Msg, int Len);
 
+void DoTermResize(Ui_ListenSession * Sess)
+{
+
+	QRect r = Sess->rect();
+
+	int H, Mid, monHeight, termHeight, Width, Border = 3;
+
+	Width = r.width();
+	H = r.height();
+
+	if (TermMode == Tabbed)
+	{
+		//					H -= 20;
+		Width -= 7;
+	}
+	else if (TermMode == Single)
+	{
+		Width -= 7;
+		//					H += 20;
+	}
+
+	if (Sess->SessionType == Listen || Sess->SessionType == Term)
+	{
+		// Term and Input
+
+		// Calc Positions of window
+
+		termHeight = H - (inputheight + 3 * Border);
+
+		Sess->termWindow->setGeometry(QRect(Border, Border, Width, termHeight));
+
+		if (Sess->TTActive)
+		{
+			Sess->TTLabel->setGeometry(QRect(Border, Border, 600, 475));
+//			Sess->termWindow->setVisible(false);
+			Sess->TTLabel->setVisible(true);
+		}
+		else
+		{
+//			Sess->termWindow->setVisible(true);
+			Sess->TTLabel->setVisible(false);
+		}
+
+		Sess->inputWindow->setGeometry(QRect(Border, H - (inputheight + Border), Width, inputheight));
+	}
+	else if (Sess->SessionType == (Term | Mon))
+	{
+		// All 3
+
+		// Calc Positions of window
+
+		Mid = (H * Split) / 100;
+
+		monHeight = Mid - Border;
+		termX = Mid;
+		termHeight = H - Mid - (inputheight + 3 * Border);
+
+		Sess->monWindow->setGeometry(QRect(Border, Border, Width, monHeight));
+		Sess->termWindow->setGeometry(QRect(Border, Mid + Border, Width, termHeight));
+
+		if (Sess->TTActive)
+		{
+			Sess->TTLabel->setGeometry(QRect(3, Mid + Border, 600, 475));
+//			Sess->termWindow->setVisible(false);
+			Sess->TTLabel->setVisible(true);
+		}
+		else
+		{
+//			Sess->termWindow->setVisible(true);
+			Sess->TTLabel->setVisible(false);
+		}
+
+		Sess->inputWindow->setGeometry(QRect(Border, H - (inputheight + Border), Width, inputheight));
+
+	}
+	else
+	{
+		// Should just be Mon only
+
+		Sess->monWindow->setGeometry(QRect(Border, Border, Width, H - 2 * Border));
+	}
+}
+
 bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 {
 	// See if from a Listening Session
@@ -531,8 +625,8 @@ bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 	{
 		Sess = _sessions.at(i);
 
-//	Sess = _sessions.at(i);	for (Ui_ListenSession * Sess : _sessions)
-//	{
+		//	Sess = _sessions.at(i);	for (Ui_ListenSession * Sess : _sessions)
+		//	{
 		if (Sess == NULL)
 			continue;
 
@@ -545,7 +639,7 @@ bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 				// This only closed mon sessinos
 
 				if (Sess->AGWMonSession)
-//					AGWMonWindowClosing(Sess);
+					//					AGWMonWindowClosing(Sess);
 					AGWWindowClosing(Sess);
 
 				if (Sess->AGWSession)
@@ -564,58 +658,7 @@ bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 
 			if (event->type() == QEvent::Resize)
 			{
-				QRect r = Sess->rect();
-
-				int H, Mid, monHeight, termHeight, Width, Border = 3;
-
-				Width = r.width();
-				H = r.height();
-
-				if (TermMode == Tabbed)
-				{
-					//					H -= 20;
-					Width -= 7;
-				}
-				else if (TermMode == Single)
-				{
-					Width -= 7;
-//					H += 20;
-				}
-
-				if (Sess->SessionType == Listen || Sess->SessionType == Term)
-				{
-					// Term and Input
-
-					// Calc Positions of window
-
-					termHeight = H - (inputheight + 3 * Border);
-
-					Sess->termWindow->setGeometry(QRect(Border, Border, Width, termHeight));
-					Sess->inputWindow->setGeometry(QRect(Border, H - (inputheight + Border), Width, inputheight));
-				}
-				else if (Sess->SessionType == (Term | Mon))
-				{
-					// All 3
-
-					// Calc Positions of window
-
-					Mid = (H * Split) / 100;
-
-					monHeight = Mid - Border;
-					termX = Mid;
-					termHeight = H - Mid - (inputheight + 3 * Border);
-
-					Sess->monWindow->setGeometry(QRect(Border, Border, Width, monHeight));
-					Sess->termWindow->setGeometry(QRect(Border, Mid + Border, Width, termHeight));
-					Sess->inputWindow->setGeometry(QRect(Border, H - (inputheight + Border), Width, inputheight));
-				}
-				else
-				{
-					// Should just be Mon only
-
-					Sess->monWindow->setGeometry(QRect(Border, Border, Width, H - 2 * Border));
-				}
-
+				DoTermResize(Sess);
 			}
 		}
 
@@ -664,7 +707,7 @@ bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 						return true;
 					}
 				}
-				
+
 				if (key == Qt::Key_Up)
 				{
 					// Scroll up
@@ -747,7 +790,7 @@ bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 	}
 	return QMainWindow::eventFilter(obj, event);
 }
-	
+
 QAction * setupMenuLine(QMenu * Menu, char * Label, QObject * parent, int State)
 {
 	QAction * Act = new QAction(Label, parent);
@@ -775,7 +818,6 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 
 	// Need to explicity initialise on Qt4
 
-	
 	Sess->termWindow = NULL;
 	Sess->monWindow = NULL;
 	Sess->inputWindow = NULL;
@@ -805,15 +847,26 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	Sess->AGWMonSession = NULL;
 	Sess->KISSSession = NULL;
 	Sess->KISSMode = 0;
+	Sess->TTActive = 0;
+	Sess->TTFlashToggle = 0;
+	Sess->pageBuffer[0] = 0;
 
 	_sessions.push_back(Sess);
 
-//	Sess->setObjectName(QString::fromUtf8("Sess"));
+//	Sess->TT = new Ui_TeleTextDialog();
+
+//	Sess->TT->setupUi(&Sess->TTUI);
+
+//	Sess->TTUI.show();
+//	Sess->TTUI.raise();
+//	Sess->TTUI.activateWindow();
+
+	//	Sess->setObjectName(QString::fromUtf8("Sess"));
 
 	if (TermMode == MDI)
 	{
 		Sess->sw = mdiArea->addSubWindow(Sess);
-//		Sess->installEventFilter(parent);
+		//		Sess->installEventFilter(parent);
 
 		Sess->sw->resize(800, 600);
 	}
@@ -832,13 +885,13 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	QSettings settings(GetConfPath(), QSettings::IniFormat);
 
 #ifdef ANDROID
-		QFont font = QFont(settings->value("FontFamily", "Driod Sans Mono").value<QString>(),
-			settings->value("PointSize", 12).toInt(),
-			settings->value("Weight", 50).toInt());
+	QFont font = QFont(settings->value("FontFamily", "Driod Sans Mono").value<QString>(),
+		settings->value("PointSize", 12).toInt(),
+		settings->value("Weight", 50).toInt());
 #else
-		QFont font = QFont(settings.value("FontFamily", "Courier New").value<QString>(),
-			settings.value("PointSize", 10).toInt(),
-			settings.value("Weight", 50).toInt());
+	QFont font = QFont(settings.value("FontFamily", "Courier New").value<QString>(),
+		settings.value("PointSize", 10).toInt(),
+		settings.value("Weight", 50).toInt());
 #endif
 
 	if ((Type & Mon))
@@ -859,6 +912,32 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 		Sess->termWindow->setFont(font);
 		Sess->termWindow->setStyleSheet(termStyleSheet);
 
+		Sess->TTLabel = new QLabel(Sess);
+		Sess->TTLabel->setGeometry(QRect(0,0 ,500, 500));
+		Sess->TTLabel->setVisible(false);
+
+		Sess->TTBitmap = new QImage(40 * 15, 25 * 19, QImage::Format_RGB32);
+		Sess->TTBitmap->fill(Qt::black);
+/*
+
+		char Page[4096];
+
+		QFile file("/savepage.txt");
+		file.open(QIODevice::ReadOnly);
+		file.read(Page, 4096);
+		file.close();
+
+		Sess->TTActive = 1;
+		strcpy(Sess->pageBuffer, Page);
+		DecodeTeleText(Sess, Sess->pageBuffer);
+*/
+
+		Sess->TTLabel->setPixmap(QPixmap::fromImage(*Sess->TTBitmap));
+
+		Sess->TTLabel->setContextMenuPolicy(Qt::CustomContextMenu);
+		mythis->connect(Sess->TTLabel, SIGNAL(customContextMenuRequested(const QPoint&)),
+			parent, SLOT(showContextMenuL()));
+
 		mythis->connect(Sess->termWindow, SIGNAL(selectionChanged()), parent, SLOT(onTEselectionChanged()));
 
 		Sess->inputWindow = new QLineEdit(Sess);
@@ -870,9 +949,20 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 		mythis->connect(Sess->inputWindow, SIGNAL(selectionChanged()), parent, SLOT(onLEselectionChanged()));
 	}
 
+	if (Type == Term || Type == Listen)
+	{
+		// Term Only or Listen Only
+
+		Sess->termWindow->setContextMenuPolicy(Qt::CustomContextMenu);
+
+		mythis->connect(Sess->termWindow, SIGNAL(customContextMenuRequested(const QPoint&)),
+			parent, SLOT(showContextMenuT(const QPoint &)));
+
+	}
+
 	if (Type == (Term | Mon))
 	{
-		// Add Custom Menu to set Mon/Term Split with Right Click
+		// Combined Term and Mon. Add Custom Menu to set Mon/Term Split with Right Click
 
 		Sess->monWindow->setContextMenuPolicy(Qt::CustomContextMenu);
 		Sess->termWindow->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -882,7 +972,7 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 			parent, SLOT(showContextMenuM(const QPoint &)));
 
 		mythis->connect(Sess->termWindow, SIGNAL(customContextMenuRequested(const QPoint&)),
-			parent, SLOT(showContextMenuT(const QPoint &)));
+			parent, SLOT(showContextMenuMT(const QPoint &)));
 	}
 
 	if (Sess->SessionType == Mon)			// Mon Only
@@ -912,7 +1002,6 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	return Sess;
 }
 
-
 QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 {
 	int i;
@@ -922,7 +1011,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	std::string directory = QStandardPaths::standardLocations(QStandardPaths::AppDataLocation).at(0).toStdString();
 	std::string conf_path = directory + "/QtTermTCP.ini";
 
-//mkdir(directory.c_str(), 0775);
+	//mkdir(directory.c_str(), 0775);
 
 	_server = new QTcpServer();
 
@@ -1001,7 +1090,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 		newWindow(this, TabType[7], "Monitor");
 		newWindow(this, TabType[8], "Monitor");
 
-		ActiveSession= _sessions.at(0);
+		ActiveSession = _sessions.at(0);
 
 		connect(tabWidget, SIGNAL(currentChanged(int)), this, SLOT(tabSelected(int)));
 
@@ -1013,15 +1102,15 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	this->setWindowTitle(Title);
 
-//#ifdef ANDROID
-//	mymymenuBar->setVisible(false);
-//#endif
+	//#ifdef ANDROID
+	//	mymymenuBar->setVisible(false);
+	//#endif
 
 	if (TermMode == Single)
 		windowMenu = mymenuBar->addMenu("");
 	else
 		windowMenu = mymenuBar->addMenu(tr("&Window"));
-	
+
 	connect(windowMenu, SIGNAL(aboutToShow()), this, SLOT(updateWindowMenu()));
 	windowMenu->setFont(*menufont);
 
@@ -1062,7 +1151,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 		previousAct->setStatusTip(tr("Move the focus to the previous window"));
 		connect(previousAct, SIGNAL(triggered()), mdiArea, SLOT(activatePreviousSubWindow()));
 	}
-	
+
 	quitAction = new QAction(tr("&Quit"), this);
 	connect(quitAction, SIGNAL(triggered()), this, SLOT(doQuit()));
 
@@ -1104,17 +1193,17 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	discAction = mymenuBar->addAction("&Disconnect");
 
-    // Place discAction in mac preferences menu, otherwise it doesn't appear
-    if (is_mac == true) {
-        QMenu * app_menu = mymenuBar->addMenu("App Menu");
-        discAction->setMenuRole(QAction::ApplicationSpecificRole);
-        app_menu->addAction(discAction);
+	// Place discAction in mac preferences menu, otherwise it doesn't appear
+	if (is_mac == true) {
+		QMenu * app_menu = mymenuBar->addMenu("App Menu");
+		discAction->setMenuRole(QAction::ApplicationSpecificRole);
+		app_menu->addAction(discAction);
 
-    }
+	}
 
 	connect(discAction, SIGNAL(triggered()), this, SLOT(Disconnect()));
 	discAction->setEnabled(false);
-	
+
 	toolBar->setFont(*menufont);
 
 #ifndef ANDROID
@@ -1138,7 +1227,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	toolBar->addAction(discAction);
 
 	setupMenu = mymenuBar->addMenu(tr("&Setup"));
-    hostsubMenu = setupMenu->addMenu("Hosts");
+	hostsubMenu = setupMenu->addMenu("Hosts");
 	hostsubMenu->setFont(*menufont);
 
 	for (i = 0; i < MAXHOSTS; i++)
@@ -1178,12 +1267,12 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	setupMenu->addSeparator();
 
-    actFonts = new QAction("Terminal Font", this);
+	actFonts = new QAction("Terminal Font", this);
 	setupMenu->addAction(actFonts);
 	connect(actFonts, SIGNAL(triggered()), this, SLOT(doFonts()));
 	actFonts->setFont(*menufont);
 
-    actmenuFont = new QAction("Menu Font", this);
+	actmenuFont = new QAction("Menu Font", this);
 	setupMenu->addAction(actmenuFont);
 	connect(actmenuFont, SIGNAL(triggered()), this, SLOT(doMFonts()));
 	actmenuFont->setFont(*menufont);
@@ -1210,6 +1299,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 
 	actChatMode = setupMenuLine(setupMenu, (char *)"Chat Terminal Mode", this, ChatMode);
+	actAutoTeletext = setupMenuLine(setupMenu, (char *)"Auto switch to Teletext", this, AutoTeletext);
 	actBells = setupMenuLine(setupMenu, (char *)"Enable Bells", this, Bells);
 	actStripLF = setupMenuLine(setupMenu, (char *)"Strip Line Feeds", this, StripLF);
 	actIntervalBeep = setupMenuLine(setupMenu, (char *)"Beep after inactivity", this, AlertBeep);
@@ -1294,12 +1384,12 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	toolBar->setFont(*menufont);
 
 	// Set up Status Bar
-	
-	setStyleSheet("QStatusBar{border-top: 1px outset black;} QStatusBar::item { border: 1px solid black; border-radius: 3px;}");
-//	setStyleSheet("QStatusBar{border-top: 1px outset black;}");
 
-	
-	Status4 = new QLabel(""); 
+	setStyleSheet("QStatusBar{border-top: 1px outset black;} QStatusBar::item { border: 1px solid black; border-radius: 3px;}");
+	//	setStyleSheet("QStatusBar{border-top: 1px outset black;}");
+
+
+	Status4 = new QLabel("");
 	Status3 = new QLabel("         ");
 	Status2 = new QLabel("    ");
 	Status1 = new QLabel("  Disconnected  ");
@@ -1374,13 +1464,16 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	if (listenEnable)
 		_server->listen(QHostAddress::Any, listenPort);
-	
+
 	connect(_server, SIGNAL(newConnection()), this, SLOT(onNewConnection()));
 
 	setFonts();
 
 	if (VARAEnable)
 		OpenPTTPort();
+
+	memset(axMYCALL, 0, 7);
+	ConvToAX25(MYCALL, axMYCALL);
 }
 
 void QtTermTCP::setFonts()
@@ -1437,6 +1530,30 @@ void QtTermTCP::onLEselectionChanged()
 	x->copy();
 }
 
+void QtTermTCP::setVDMode()
+{
+	QAction * sender = static_cast<QAction*>(QObject::sender());
+
+	QTextEdit * window = static_cast<QTextEdit*>(sender->parentWidget());
+
+	// Need to find session with this window as owner
+
+	Ui_ListenSession * Sess = NULL;
+
+
+	for (int i = 0; i < _sessions.size(); ++i)
+	{
+		Sess = _sessions.at(i);
+
+		if (Sess->termWindow == window)
+		{
+			Sess->TTActive ^= 1;
+			DoTermResize(Sess);
+			break;
+		}
+	}
+}
+
 int splitY;					// Value when menu added
 
 void QtTermTCP::setSplit()
@@ -1465,8 +1582,10 @@ void QtTermTCP::setSplit()
 
 	eventFilter(Parent, &event);
 }
-void QtTermTCP::showContextMenuT(const QPoint &pt)				// Term Window
+void QtTermTCP::showContextMenuMT(const QPoint &pt)				// Term Window
 {
+	// Monitor and Terminal (Term Half)
+
 	QTextEdit* sender = static_cast<QTextEdit*>(QObject::sender());
 
 	QMenu *menu = sender->createStandardContextMenu();
@@ -1474,18 +1593,68 @@ void QtTermTCP::showContextMenuT(const QPoint &pt)				// Term Window
 	QString style = "QMenu {border-radius:15px; background-color: white;margin: 2px; border: 1px solid rgb(58, 80, 116); color:  rgb(58, 80, 116);}QMenu::separator {height: 2px;background: rgb(58, 80, 116);margin-left: 10px;margin-right: 5px;}";
 	menu->setStyleSheet(style);
 
-
 	QAction * actSplit = new QAction("Set Monitor/Output Split", sender);
+	QAction * actVDMode = new QAction("Toggle Viewdata Mode", sender);
 
 	menu->addAction(actSplit);
+	menu->addAction(actVDMode);
 
 	splitY = pt.y() + termX;
 
 	connect(actSplit, SIGNAL(triggered()), this, SLOT(setSplit()));
+	connect(actVDMode, SIGNAL(triggered()), this, SLOT(setVDMode()));
 
 	menu->exec(sender->mapToGlobal(pt));
 	delete menu;
 }
+
+
+void QtTermTCP::showContextMenuT(const QPoint &pt)				// Term Window
+{
+	// Just Terminal 
+
+	QTextEdit* sender = static_cast<QTextEdit*>(QObject::sender());
+
+	QMenu *menu = sender->createStandardContextMenu();
+
+	QString style = "QMenu {border-radius:15px; background-color: white;margin: 2px; border: 1px solid rgb(58, 80, 116); color:  rgb(58, 80, 116);}";
+	menu->setStyleSheet(style);
+
+
+	QAction * actVDMode = new QAction("Toggle Viewdata Mode", sender);
+
+	menu->addAction(actVDMode);
+
+	connect(actVDMode, SIGNAL(triggered()), this, SLOT(setVDMode()));
+	menu->exec(sender->mapToGlobal(pt));
+	delete menu;
+}
+
+
+void QtTermTCP::showContextMenuL()				// Term Window
+{
+	// Teletext Label Right Clicked - cancel TT Mode
+
+	QLabel * sender = static_cast<QLabel*>(QObject::sender());
+
+	// Need to find session with this label as owner
+
+	Ui_ListenSession * Sess = NULL;
+
+	for (int i = 0; i < _sessions.size(); ++i)
+	{
+		Sess = _sessions.at(i);
+
+		if (Sess->TTLabel == sender)
+		{
+			Sess->TTActive ^= 1;
+
+			DoTermResize(Sess);
+			break;
+		}
+	}
+}
+
 
 void QtTermTCP::showContextMenuM(const QPoint &pt)				// Mon Window
 {
@@ -1732,7 +1901,7 @@ void QtTermTCP::Connect()
 
 		VARAConnect dialog(0);
 		dialog.exec();
-		WritetoOutputWindow(Sess, (unsigned char *)"Connecting...\r",14);
+		WritetoOutputWindow(Sess, (unsigned char *)"Connecting...\r", 14);
 
 		return;
 	}
@@ -1825,7 +1994,7 @@ void QtTermTCP::Disconnect()
 		if (Sess->KISSMode == 0)
 		{
 			TAX25Port * Port = (TAX25Port *)Sess->KISSSession;
-		
+
 			rst_timer(Port);
 			set_unlink(Port, Port->Path);
 		}
@@ -1999,6 +2168,8 @@ void QtTermTCP::menuChecked()
 		ActiveSession->MonitorColour = state;
 	else if (Act == actChatMode)
 		ChatMode = state;
+	else if (Act == actAutoTeletext)
+		AutoTeletext = state;
 	else if (Act == actBells)
 		Bells = state;
 	else if (Act == actStripLF)
@@ -2026,7 +2197,7 @@ void QtTermTCP::menuChecked()
 			if (Act == MonPort[i])
 			{
 				unsigned long long mmask;
-				
+
 				if (i == 0)				// BBS Mon - use bit 32
 					mmask = 1ll << 32;
 				else
@@ -2060,7 +2231,7 @@ void QtTermTCP::menuChecked()
 
 	if (ActiveSession->clientSocket && ActiveSession->SessionType & Mon)
 		SendTraceOptions(ActiveSession);
-	
+
 	return;
 }
 
@@ -2109,11 +2280,18 @@ void QtTermTCP::LreturnPressed(Ui_ListenSession * Sess)
 
 	Msgptr = stringData.data();
 
+	if (Sess->TTActive)					// Teletext uses 0x5F for #
+		while ((ptr = strchr(Msgptr, 0x23)))	// Replace VT with LF
+			*ptr++ = 0x5f;
+
+
 	while ((ptr = strchr(Msgptr, 11)))	// Replace VT with LF
 		*ptr++ = 10;
 
 	LastWrite = time(NULL);				// Stop initial beep
 	Sess->SlowTimer = 0;
+
+	Sess->pageBuffer[0] = 0;			// Reset Teletext mode screen buffer
 
 	if (Sess->KISSMode == 1)
 	{
@@ -2206,9 +2384,8 @@ void QtTermTCP::LreturnPressed(Ui_ListenSession * Sess)
 
 			Msgptr = ptr;
 		}
-
-
 	}
+
 	else if (Sess->clientSocket && Sess->clientSocket->state() == QAbstractSocket::ConnectedState)
 	{
 		while ((ptr = strchr(Msgptr, '\n')))
@@ -2233,7 +2410,7 @@ void QtTermTCP::LreturnPressed(Ui_ListenSession * Sess)
 	}
 	else
 	{
-			// Not Connected 
+		// Not Connected 
 
 		if (Sess->SessionType != Listen)
 		{
@@ -2354,18 +2531,21 @@ void QtTermTCP::readyRead()
 
 	while (Read > 0)
 	{
-//		if (InputMode == 'Y')			// Yapp
-//		{
-//			QString myString = QString::fromUtf8((char*)Buffer, Read);
-//			QByteArray ptr = myString.toLocal8Bit();
-//			memcpy(Buffer, ptr.data(), ptr.length());
-//			Read = ptr.length();
-//		}
+		//		if (InputMode == 'Y')			// Yapp
+		//		{
+		//			QString myString = QString::fromUtf8((char*)Buffer, Read);
+		//			QByteArray ptr = myString.toLocal8Bit();
+		//			memcpy(Buffer, ptr.data(), ptr.length());
+		//			Read = ptr.length();
+		//		}
+
+			
+		Buffer[Read] = 0;
 
 		ProcessReceivedData(Sess, Buffer, Read);
 
 		QString myString = QString::fromUtf8((char*)Buffer);
-//		qDebug() << myString;
+		//		qDebug() << myString;
 		Read = Socket->read((char *)Buffer, 2047);
 	}
 }
@@ -2373,10 +2553,10 @@ void QtTermTCP::readyRead()
 extern "C" int SocketSend(Ui_ListenSession * Sess, char * Buffer, int len)
 {
 	myTcpSocket *Socket = Sess->clientSocket;
-	
+
 	if (Socket && Socket->state() == QAbstractSocket::ConnectedState)
 		return Socket->write(Buffer, len);
-	
+
 	return 0;
 }
 
@@ -2448,9 +2628,9 @@ extern "C" void WritetoOutputWindowEx(Ui_ListenSession * Sess, unsigned char * B
 
 	ptr1 = Copy;
 
-		const QTextCursor old_cursor = termWindow->textCursor();
-		const int old_scrollbar_value = termWindow->verticalScrollBar()->value();
-		const bool is_scrolled_down = old_scrollbar_value == termWindow->verticalScrollBar()->maximum();
+	const QTextCursor old_cursor = termWindow->textCursor();
+	const int old_scrollbar_value = termWindow->verticalScrollBar()->value();
+	const bool is_scrolled_down = old_scrollbar_value == termWindow->verticalScrollBar()->maximum();
 
 	if (*OutputSaveLen)
 	{
@@ -2472,7 +2652,7 @@ extern "C" void WritetoOutputWindowEx(Ui_ListenSession * Sess, unsigned char * B
 	}
 
 	// Move the cursor to the end of the document.
-	
+
 	termWindow->moveCursor(QTextCursor::End);
 
 	// Insert the text at the position of the cursor (which is the end of the document).
@@ -2530,10 +2710,10 @@ lineloop:
 			termWindow->textCursor().insertText(QString::fromUtf8((char*)Line));
 		}
 
-//		*OutputSaveLen = 0;		// Test if we need to delete part line
+		//		*OutputSaveLen = 0;		// Test if we need to delete part line
 
-//		if (scrollbarAtBottom)
-//			termWindow->moveCursor(QTextCursor::End);
+		//		if (scrollbarAtBottom)
+		//			termWindow->moveCursor(QTextCursor::End);
 
 		if (old_cursor.hasSelection() || !is_scrolled_down)
 		{
@@ -2583,7 +2763,7 @@ lineloop:
 		outlen = checkUTF8(&Line[2], num - 2, out);
 		out[outlen] = 0;
 		termWindow->textCursor().insertText(QString::fromUtf8((char*)out));
-//		termWindow->textCursor().insertText(QString::fromUtf8((char*)&Line[2]));
+		//		termWindow->textCursor().insertText(QString::fromUtf8((char*)&Line[2]));
 	}
 	else
 	{
@@ -2592,7 +2772,7 @@ lineloop:
 		outlen = checkUTF8(Line, num, out);
 		out[outlen] = 0;
 		termWindow->textCursor().insertText(QString::fromUtf8((char*)out));
-//		termWindow->textCursor().insertText(QString::fromUtf8((char*)Line));
+		//		termWindow->textCursor().insertText(QString::fromUtf8((char*)Line));
 	}
 
 	len -= (ptr2 - ptr1);
@@ -2616,12 +2796,12 @@ lineloop:
 
 extern "C" void WritetoMonWindow(Ui_ListenSession * Sess, unsigned char * Msg, int len)
 {
-	char * ptr1 = (char *)Msg, * ptr2;
+	char * ptr1 = (char *)Msg, *ptr2;
 	char Line[512];
 	int num;
 
-//	QScrollBar *scrollbar = Sess->monWindow->verticalScrollBar();
-//	bool scrollbarAtBottom = (scrollbar->value() >= (scrollbar->maximum() - 4));
+	//	QScrollBar *scrollbar = Sess->monWindow->verticalScrollBar();
+	//	bool scrollbarAtBottom = (scrollbar->value() >= (scrollbar->maximum() - 4));
 
 	if (Sess->monWindow == nullptr)
 		return;
@@ -2639,7 +2819,7 @@ extern "C" void WritetoMonWindow(Ui_ListenSession * Sess, unsigned char * Msg, i
 
 
 	// Write a line at a time so we can action colour chars
-		
+
 //		Buffer[Len] = 0;
 
 //	if (scrollbarAtBottom)
@@ -2659,8 +2839,8 @@ lineloop:
 
 	if (len <= 0)
 	{
-//		if (scrollbarAtBottom)
-//			Sess->monWindow->moveCursor(QTextCursor::End);
+		//		if (scrollbarAtBottom)
+		//			Sess->monWindow->moveCursor(QTextCursor::End);
 
 
 		if (old_cursor.hasSelection() || !is_scrolled_down)
@@ -2692,7 +2872,7 @@ lineloop:
 
 	*(ptr2++) = 0;
 
-//		if (LogMonitor) WriteMonitorLine(ptr1, ptr2 - ptr1);
+	//		if (LogMonitor) WriteMonitorLine(ptr1, ptr2 - ptr1);
 
 	num = ptr2 - ptr1 - 1;
 
@@ -2743,8 +2923,12 @@ void QueueMsg(Ui_ListenSession * Sess, char * Msg, int Len);
 
 extern "C" void SendtoTerm(Ui_ListenSession * Sess, char * Msg, int Len)
 {
-	Sess->SlowTimer = 0; 
+	if (Sess == 0)
+		return;
 	
+	Sess->SlowTimer = 0;
+	Msg[Len] = 0;
+
 	if (Sess->InputMode == 'Y')			// Yapp
 	{
 		ProcessYAPPMessage(Sess, (unsigned char *)Msg, Len);
@@ -2765,6 +2949,31 @@ extern "C" void SendtoTerm(Ui_ListenSession * Sess, char * Msg, int Len)
 		YAPPRR[1] = 1;
 		QueueMsg(Sess, YAPPRR, 2);
 
+		return;
+	}
+
+	if (AutoTeletext && (Msg[0] == 0x1e || Msg[0] == 0x0c))
+	{
+		if (Sess->TTActive == 0)
+		{
+			Sess->TTActive = 1;
+			DoTermResize(Sess);
+		}
+	}
+
+	if (Sess->TTActive)
+	{
+		// Feed to Teletext code
+
+		// We need to decode a whole page. There is no obvious delimiter so process till data stops.
+		// Buffer is cleared when next input is sent
+
+		if (strlen(&Sess->pageBuffer[0] + Len) > 4090)
+			Sess->pageBuffer[0] = 0;							// Protect buffer
+
+		strcat(Sess->pageBuffer, (char *)Msg);
+
+		DecodeTeleText(Sess, (char *)Sess->pageBuffer);			// Re-decode same data until we get the end
 		return;
 	}
 
@@ -2833,102 +3042,103 @@ void GetSettings()
 	{
 		sprintf(Key, "HostParams%d", i);
 
-		qb =settings->value(Key).toByteArray();
+		qb = settings->value(Key).toByteArray();
 
 		DecodeSettingsLine(i, qb.data());
 	}
 
-	Split =settings->value("Split", 50).toInt();
-	ChatMode =settings->value("ChatMode", 1).toInt();
-	Bells =settings->value("Bells", 1).toInt();
-	StripLF =settings->value("StripLF", 1).toInt();
-	AlertBeep =settings->value("AlertBeep", 1).toInt();
-	ConnectBeep =settings->value("ConnectBeep", 1).toInt();
-	SavedHost =settings->value("CurrentHost", 0).toInt();
-	strcpy(YAPPPath,settings->value("YAPPPath", "").toString().toUtf8());
+	Split = settings->value("Split", 50).toInt();
+	ChatMode = settings->value("ChatMode", 1).toInt();
+	AutoTeletext = settings->value("AutoTeletext", 0).toInt();
+	Bells = settings->value("Bells", 1).toInt();
+	StripLF = settings->value("StripLF", 1).toInt();
+	AlertBeep = settings->value("AlertBeep", 1).toInt();
+	ConnectBeep = settings->value("ConnectBeep", 1).toInt();
+	SavedHost = settings->value("CurrentHost", 0).toInt();
+	strcpy(YAPPPath, settings->value("YAPPPath", "").toString().toUtf8());
 
-	listenPort =settings->value("listenPort", 8015).toInt();
-	listenEnable =settings->value("listenEnable", false).toBool();
-	strcpy(listenCText,settings->value("listenCText", "").toString().toUtf8());
+	listenPort = settings->value("listenPort", 8015).toInt();
+	listenEnable = settings->value("listenEnable", false).toBool();
+	strcpy(listenCText, settings->value("listenCText", "").toString().toUtf8());
 
-	TermMode =settings->value("TermMode", 0).toInt();
-	singlemodeFormat =settings->value("singlemodeFormat", Term + Mon).toInt();
+	TermMode = settings->value("TermMode", 0).toInt();
+	singlemodeFormat = settings->value("singlemodeFormat", Term + Mon).toInt();
 
-	AGWEnable =settings->value("AGWEnable", 0).toInt();
-	AGWMonEnable =settings->value("AGWMonEnable", 0).toInt();
-	strcpy(AGWTermCall,settings->value("AGWTermCall", "").toString().toUtf8());
-	strcpy(AGWBeaconDest,settings->value("AGWBeaconDest", "").toString().toUtf8());
-	strcpy(AGWBeaconPath,settings->value("AGWBeaconPath", "").toString().toUtf8());
-	AGWBeaconInterval =settings->value("AGWBeaconInterval", 0).toInt();
-	strcpy(AGWBeaconPorts,settings->value("AGWBeaconPorts", "").toString().toUtf8());
-	strcpy(AGWBeaconMsg,settings->value("AGWBeaconText", "").toString().toUtf8());
-	strcpy(AGWHost,settings->value("AGWHost", "127.0.0.1").toString().toUtf8());
-	AGWPortNum =settings->value("AGWPort", 8000).toInt();
-	AGWPaclen =settings->value("AGWPaclen", 80).toInt();
-	AGWToCalls =settings->value("AGWToCalls","").toStringList();
-	convUTF8 =settings->value("convUTF8", 0).toInt();
+	AGWEnable = settings->value("AGWEnable", 0).toInt();
+	AGWMonEnable = settings->value("AGWMonEnable", 0).toInt();
+	strcpy(AGWTermCall, settings->value("AGWTermCall", "").toString().toUtf8());
+	strcpy(AGWBeaconDest, settings->value("AGWBeaconDest", "").toString().toUtf8());
+	strcpy(AGWBeaconPath, settings->value("AGWBeaconPath", "").toString().toUtf8());
+	AGWBeaconInterval = settings->value("AGWBeaconInterval", 0).toInt();
+	strcpy(AGWBeaconPorts, settings->value("AGWBeaconPorts", "").toString().toUtf8());
+	strcpy(AGWBeaconMsg, settings->value("AGWBeaconText", "").toString().toUtf8());
+	strcpy(AGWHost, settings->value("AGWHost", "127.0.0.1").toString().toUtf8());
+	AGWPortNum = settings->value("AGWPort", 8000).toInt();
+	AGWPaclen = settings->value("AGWPaclen", 80).toInt();
+	AGWToCalls = settings->value("AGWToCalls", "").toStringList();
+	convUTF8 = settings->value("convUTF8", 0).toInt();
 
-	KISSEnable =settings->value("KISSEnable", 0).toInt();
-	strcpy(MYCALL,settings->value("MYCALL", "").toString().toUtf8());
-	strcpy(KISSHost,settings->value("KISSHost", "127.0.0.1").toString().toUtf8());
+	KISSEnable = settings->value("KISSEnable", 0).toInt();
+	strcpy(MYCALL, settings->value("MYCALL", "").toString().toUtf8());
+	strcpy(KISSHost, settings->value("KISSHost", "127.0.0.1").toString().toUtf8());
 	KISSPortNum = settings->value("KISSPort", 8100).toInt();
 	KISSMode = settings->value("KISSMode", 0).toInt();
 
-	strcpy(SerialPort,settings->value("KISSSerialPort", "None").toString().toUtf8());
-	KISSBAUD =settings->value("KISSBAUD", 19200).toInt();
+	strcpy(SerialPort, settings->value("KISSSerialPort", "None").toString().toUtf8());
+	KISSBAUD = settings->value("KISSBAUD", 19200).toInt();
 	getAX25Params(0);
 
-	VARAEnable =settings->value("VARAEnable", 0).toInt();
-	strcpy(VARAHost,settings->value("VARAHost", "127.0.0.1").toString().toUtf8());
-	strcpy(VARAHostFM,settings->value("VARAHostFM", "127.0.0.1").toString().toUtf8());
-	strcpy(VARAHostHF,settings->value("VARAHostHF", "127.0.0.1").toString().toUtf8());
-	strcpy(VARAHostSAT,settings->value("VARAHostSAT", "127.0.0.1").toString().toUtf8());
-	VARAPortNum =settings->value("VARAPort", 8300).toInt();
-	VARAPortHF =settings->value("VARAPortHF", 8300).toInt();
-	VARAPortFM =settings->value("VARAPortFM", 8300).toInt();
-	VARAPortSAT =settings->value("VARAPortSAT", 8300).toInt();
-	strcpy(VARAPath,settings->value("VARAPath", "C:\\VARA\\VARA.exe").toString().toUtf8());
-	strcpy(VARAPathHF,settings->value("VARAPathHF", "C:\\VARA\\VARA.exe").toString().toUtf8());
-	strcpy(VARAPathFM,settings->value("VARAPathFM", "C:\\VARA\\VARAFM.exe").toString().toUtf8());
-	strcpy(VARAPathSAT,settings->value("VARAPathSAT", "C:\\VARA\\VARASAT.exe").toString().toUtf8());
-	strcpy(VARATermCall,settings->value("VARATermCall", "").toString().toUtf8());
-	VARA500 =settings->value("VARA500", 0).toInt();
-	VARA2300 =settings->value("VARA2300", 1).toInt();
-	VARA2750 =settings->value("VARA2750", 0).toInt();
-	VARAHF =settings->value("VARAHF", 1).toInt();
-	VARAFM =settings->value("VARAFM", 0).toInt();
-	VARASAT =settings->value("VARASAT", 0).toInt();
+	VARAEnable = settings->value("VARAEnable", 0).toInt();
+	strcpy(VARAHost, settings->value("VARAHost", "127.0.0.1").toString().toUtf8());
+	strcpy(VARAHostFM, settings->value("VARAHostFM", "127.0.0.1").toString().toUtf8());
+	strcpy(VARAHostHF, settings->value("VARAHostHF", "127.0.0.1").toString().toUtf8());
+	strcpy(VARAHostSAT, settings->value("VARAHostSAT", "127.0.0.1").toString().toUtf8());
+	VARAPortNum = settings->value("VARAPort", 8300).toInt();
+	VARAPortHF = settings->value("VARAPortHF", 8300).toInt();
+	VARAPortFM = settings->value("VARAPortFM", 8300).toInt();
+	VARAPortSAT = settings->value("VARAPortSAT", 8300).toInt();
+	strcpy(VARAPath, settings->value("VARAPath", "C:\\VARA\\VARA.exe").toString().toUtf8());
+	strcpy(VARAPathHF, settings->value("VARAPathHF", "C:\\VARA\\VARA.exe").toString().toUtf8());
+	strcpy(VARAPathFM, settings->value("VARAPathFM", "C:\\VARA\\VARAFM.exe").toString().toUtf8());
+	strcpy(VARAPathSAT, settings->value("VARAPathSAT", "C:\\VARA\\VARASAT.exe").toString().toUtf8());
+	strcpy(VARATermCall, settings->value("VARATermCall", "").toString().toUtf8());
+	VARA500 = settings->value("VARA500", 0).toInt();
+	VARA2300 = settings->value("VARA2300", 1).toInt();
+	VARA2750 = settings->value("VARA2750", 0).toInt();
+	VARAHF = settings->value("VARAHF", 1).toInt();
+	VARAFM = settings->value("VARAFM", 0).toInt();
+	VARASAT = settings->value("VARASAT", 0).toInt();
 
-	strcpy(PTTPort,settings->value("PTT", "None").toString().toUtf8());
-	PTTMode =settings->value("PTTMode", 19200).toInt();
-	PTTBAUD =settings->value("PTTBAUD", 19200).toInt();
-	CATHex =settings->value("CATHex", 1).toInt();
+	strcpy(PTTPort, settings->value("PTT", "None").toString().toUtf8());
+	PTTMode = settings->value("PTTMode", 19200).toInt();
+	PTTBAUD = settings->value("PTTBAUD", 19200).toInt();
+	CATHex = settings->value("CATHex", 1).toInt();
 
-	strcpy(PTTOnString,settings->value("PTTOnString", "").toString().toUtf8());
-	strcpy(PTTOffString,settings->value("PTTOffString", "").toString().toUtf8());
+	strcpy(PTTOnString, settings->value("PTTOnString", "").toString().toUtf8());
+	strcpy(PTTOffString, settings->value("PTTOffString", "").toString().toUtf8());
 
-	pttGPIOPin =settings->value("pttGPIOPin", 17).toInt();
-	pttGPIOPinR =settings->value("pttGPIOPinR", 17).toInt();
+	pttGPIOPin = settings->value("pttGPIOPin", 17).toInt();
+	pttGPIOPinR = settings->value("pttGPIOPinR", 17).toInt();
 
 #ifdef WIN32
-	strcpy(CM108Addr,settings->value("CM108Addr", "0xD8C:0x08").toString().toUtf8());
+	strcpy(CM108Addr, settings->value("CM108Addr", "0xD8C:0x08").toString().toUtf8());
 #else
-	strcpy(CM108Addr,settings->value("CM108Addr", "/dev/hidraw0").toString().toUtf8());
+	strcpy(CM108Addr, settings->value("CM108Addr", "/dev/hidraw0").toString().toUtf8());
 #endif
 
-	HamLibPort =settings->value("HamLibPort", 4532).toInt();
-	strcpy(HamLibHost,settings->value("HamLibHost", "127.0.0.1").toString().toUtf8());
+	HamLibPort = settings->value("HamLibPort", 4532).toInt();
+	strcpy(HamLibHost, settings->value("HamLibHost", "127.0.0.1").toString().toUtf8());
 
-	FLRigPort =settings->value("FLRigPort", 12345).toInt();
-	strcpy(FLRigHost,settings->value("FLRigHost", "127.0.0.1").toString().toUtf8());
+	FLRigPort = settings->value("FLRigPort", 12345).toInt();
+	strcpy(FLRigHost, settings->value("FLRigHost", "127.0.0.1").toString().toUtf8());
 
 
-	strcpy(Param,settings->value("TabType", "1 1 1 1 1 1 1 2 2").toString().toUtf8());
+	strcpy(Param, settings->value("TabType", "1 1 1 1 1 1 1 2 2").toString().toUtf8());
 	sscanf(Param, "%d %d %d %d %d %d %d %d %d %d",
 		&TabType[0], &TabType[1], &TabType[2], &TabType[3], &TabType[4],
 		&TabType[5], &TabType[6], &TabType[7], &TabType[8], &TabType[9]);
 
-	monBackground = settings->value("monBackground", QColor(255,255,255)).value<QColor>();
+	monBackground = settings->value("monBackground", QColor(255, 255, 255)).value<QColor>();
 	monRxText = settings->value("monRxText", QColor(0, 0, 255)).value<QColor>();
 	monTxText = settings->value("monTxText", QColor(255, 0, 0)).value<QColor>();
 	monOtherText = settings->value("monOtherText", QColor(0, 0, 0)).value<QColor>();
@@ -2940,7 +3150,7 @@ void GetSettings()
 
 	inputBackground = settings->value("inputBackground", QColor(255, 255, 255)).value<QColor>();
 	inputText = settings->value("inputText", QColor(0, 0, 0)).value<QColor>();
-	
+
 	delete(settings);
 }
 
@@ -2999,6 +3209,7 @@ extern "C" void SaveSettings()
 
 	settings->setValue("Split", Split);
 	settings->setValue("ChatMode", ChatMode);
+	settings->setValue("AutoTeletext", AutoTeletext);
 	settings->setValue("Bells", Bells);
 	settings->setValue("StripLF", StripLF);
 	settings->setValue("AlertBeep", AlertBeep);
@@ -3193,7 +3404,7 @@ void QtTermTCP::KISSTimerSlot()
 void QtTermTCP::MyTimerSlot()
 {
 	// Runs every 10 seconds
-	
+
 	Ui_ListenSession * Sess;
 
 	for (int i = 0; i < _sessions.size(); ++i)
@@ -3231,7 +3442,7 @@ void QtTermTCP::MyTimerSlot()
 			}
 		}
 	}
-	
+
 	if (AGWEnable)
 		AGWTimer();
 
@@ -3247,7 +3458,6 @@ extern "C" void myBeep()
 {
 	QApplication::beep();
 }
-
 
 void QtTermTCP::ListenSlot()
 {
@@ -3299,7 +3509,7 @@ void QtTermTCP::KISSSlot()
 	KISS->KISSEnable->setChecked(KISSEnable);
 	KISS->MYCALL->setText(MYCALL);
 
-//	connect(KISS->SerialPort, SIGNAL(currentIndexChanged(int)), this, SLOT(PTTPortChanged(int)));
+	//	connect(KISS->SerialPort, SIGNAL(currentIndexChanged(int)), this, SLOT(PTTPortChanged(int)));
 
 	QStringList items;
 
@@ -3354,6 +3564,9 @@ void QtTermTCP::KISSaccept()
 
 	strcpy(MYCALL, KISS->MYCALL->text().toUtf8().toUpper());
 
+	memset(axMYCALL, 0, 7);
+	ConvToAX25(MYCALL, axMYCALL);
+
 	Q = KISS->Port->text();
 	KISSPortNum = Q.toInt();
 
@@ -3403,12 +3616,12 @@ void QtTermTCP::KISSaccept()
 	SaveSettings();
 	deviceUI->accept();
 
-//	QSize newSize(this->size());
-//	QSize oldSize(this->size());
+	//	QSize newSize(this->size());
+	//	QSize oldSize(this->size());
 
-//	QResizeEvent *myResizeEvent = new QResizeEvent(newSize, oldSize);
+	//	QResizeEvent *myResizeEvent = new QResizeEvent(newSize, oldSize);
 
-//	QCoreApplication::postEvent(this, myResizeEvent);
+	//	QCoreApplication::postEvent(this, myResizeEvent);
 }
 
 void QtTermTCP::KISSreject()
@@ -3760,10 +3973,10 @@ void QtTermTCP::onNewConnection()
 
 	if (TermMode == MDI && Sess->sw == ActiveSubWindow)
 		setMenus(true);
-	
+
 	if (TermMode == Tabbed && Sess->Tab == tabWidget->currentIndex())
 		setMenus(true);
-	
+
 	if (TermMode == Single)
 		setMenus(true);			// Single
 
@@ -3778,7 +3991,7 @@ void QtTermTCP::onNewConnection()
 
 	sprintf(Msg, "Listen Connect from %s\r\r", datas.data());
 
-	WritetoOutputWindow(Sess, (unsigned char *)Msg, (int)strlen(Msg)); 
+	WritetoOutputWindow(Sess, (unsigned char *)Msg, (int)strlen(Msg));
 
 	if (ConnectBeep)
 		myBeep();
@@ -3827,9 +4040,15 @@ void QtTermTCP::onSocketStateChanged(QAbstractSocket::SocketState socketState)
 			}
 		}
 
+		if (Sess->TTActive)
+		{
+			Sess->TTActive = 0;
+			DoTermResize(Sess);
+		}
+
 		Sess->PortMonString[0] = 0;
-		
-//		delete(Sess->clientSocket);
+
+		//		delete(Sess->clientSocket);
 		Sess->clientSocket = NULL;
 
 		discAction->setEnabled(false);
@@ -3975,9 +4194,9 @@ extern "C" void SendTraceOptions(Ui_ListenSession * Sess)
 
 	if (Sess->AGWMonSession)
 		return;
-	
+
 	char Buffer[80];
-	int Len = sprintf(Buffer, "\\\\\\\\%llx %x %x %x %x %x %x %x\r", Sess->portmask, Sess->mtxparam, Sess->mcomparam, 
+	int Len = sprintf(Buffer, "\\\\\\\\%llx %x %x %x %x %x %x %x\r", Sess->portmask, Sess->mtxparam, Sess->mcomparam,
 		Sess->MonitorNODES, Sess->MonitorColour, Sess->monUI, 0, 1);
 
 	strcpy(&MonParams[Sess->CurrentHost][0], &Buffer[4]);
@@ -4044,7 +4263,7 @@ void QtTermTCP::xon_mdiArea_changed()
 	// This is triggered when the Active MDI window changes
 	// and is used to enable/disable Connect, Disconnect and YAPP Send
 
-	
+
 	QMdiSubWindow *SW = mdiArea->activeSubWindow();
 
 	// Dont waste time if not changed
@@ -4059,9 +4278,9 @@ void QtTermTCP::xon_mdiArea_changed()
 	for (int i = 0; i < _sessions.size(); ++i)
 	{
 		Sess = _sessions.at(i);
-		
-//	for (Ui_ListenSession * Sess : _sessions)
-//	{
+
+		//	for (Ui_ListenSession * Sess : _sessions)
+		//	{
 		if (Sess->sw == SW)
 		{
 			ActiveSession = Sess;
@@ -4094,7 +4313,7 @@ void QtTermTCP::xon_mdiArea_changed()
 
 				discAction->setEnabled(false);
 				YAPPSend->setEnabled(false);
-				
+
 				if ((Sess->SessionType & Listen))		// Listen Sessions can't connect
 					connectMenu->setEnabled(false);
 				else
@@ -4299,10 +4518,10 @@ void QtTermTCP::ColourPressed()
 
 	else if (strcmp(Name, "TermBG") == 0)
 		TemptermBackground = setColor(TemptermBackground);
-	
+
 	else if (strcmp(Name, "InputBG") == 0)
 		TempinputBackground = setColor(TempinputBackground);
-	
+
 	else if (strcmp(Name, "InputColour") == 0)
 		TempinputText = setColor(TempinputText);
 
@@ -4383,7 +4602,7 @@ void QtTermTCP::ConnecttoVARA()
 	delete(VARASock);
 
 	VARASock = new myTcpSocket();
-	
+
 	connect(VARASock, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(VARAdisplayError(QAbstractSocket::SocketError)));
 	connect(VARASock, SIGNAL(readyRead()), this, SLOT(VARAreadyRead()));
 	connect(VARASock, SIGNAL(stateChanged(QAbstractSocket::SocketState)), this, SLOT(onVARASocketStateChanged(QAbstractSocket::SocketState)));
@@ -4502,7 +4721,7 @@ void QtTermTCP::VARAreadyRead()
 
 
 			sscanf(&Msg[10], "%s %s %s", CallFrom, CallTo, Mode);
-		
+
 			if (Sess)
 			{
 				if (Mode[0])
@@ -4661,7 +4880,7 @@ void QtTermTCP::VARAreadyRead()
 
 void QtTermTCP::onVARASocketStateChanged(QAbstractSocket::SocketState socketState)
 {
-//	myTcpSocket* sender = static_cast<myTcpSocket*>(QObject::sender());
+	//	myTcpSocket* sender = static_cast<myTcpSocket*>(QObject::sender());
 
 	if (socketState == QAbstractSocket::UnconnectedState)
 	{
@@ -4751,7 +4970,7 @@ void QtTermTCP::VARADatareadyRead()
 
 void QtTermTCP::onVARADataSocketStateChanged(QAbstractSocket::SocketState socketState)
 {
-//	myTcpSocket* sender = static_cast<myTcpSocket*>(QObject::sender());
+	//	myTcpSocket* sender = static_cast<myTcpSocket*>(QObject::sender());
 
 	if (socketState == QAbstractSocket::UnconnectedState)
 	{
@@ -4765,7 +4984,7 @@ void QtTermTCP::onVARADataSocketStateChanged(QAbstractSocket::SocketState socket
 	else if (socketState == QAbstractSocket::ConnectedState)
 	{
 		char MyCall[32];
-		
+
 		VARAConnected = 1;
 		VARAConnecting = 0;
 
@@ -4809,10 +5028,10 @@ void QtTermTCP::HAMLIBdisplayError(QAbstractSocket::SocketError socketError)
 		break;
 
 	case QAbstractSocket::HostNotFoundError:
-			QMessageBox::information(nullptr, tr("QtSM"),
-				"HAMLIB host was not found. Please check the "
-					"host name and portsettings->");
-		
+		QMessageBox::information(nullptr, tr("QtSM"),
+			"HAMLIB host was not found. Please check the "
+			"host name and portsettings->");
+
 		break;
 
 	case QAbstractSocket::ConnectionRefusedError:
@@ -4850,8 +5069,8 @@ void QtTermTCP::onHAMLIBSocketStateChanged(QAbstractSocket::SocketState socketSt
 		HAMLIBConnected = 0;
 		HAMLIBConnecting = 0;
 
-	//	delete (HAMLIBsock);
-	//	HAMLIBsock = 0;
+		//	delete (HAMLIBsock);
+		//	HAMLIBsock = 0;
 
 		qDebug() << "HAMLIB Connection Closed";
 
@@ -4956,8 +5175,8 @@ void QtTermTCP::onFLRigSocketStateChanged(QAbstractSocket::SocketState socketSta
 		FLRigConnected = 0;
 		FLRigConnecting = 0;
 
-	//	delete (FLRigsock);
-	//	FLRigsock = 0;
+		//	delete (FLRigsock);
+		//	FLRigsock = 0;
 
 		qDebug() << "FLRig Connection Closed";
 
@@ -4997,9 +5216,9 @@ static char MsgHddr[] = "POST /RPC2 HTTP/1.1\r\n"
 "\r\n%s";
 
 static char Req[] = "<?xml version=\"1.0\"?>\r\n"
-		"<methodCall><methodName>%s</methodName>\r\n"
-		"%s"
-		"</methodCall>\r\n";
+"<methodCall><methodName>%s</methodName>\r\n"
+"%s"
+"</methodCall>\r\n";
 
 void QtTermTCP::FLRigSetPTT(int PTTState)
 {
@@ -5029,7 +5248,7 @@ void QtTermTCP::FLRigSetPTT(int PTTState)
 }
 
 
-	
+
 void QtTermTCP::CATChanged(bool State)
 {
 	UNUSED(State);
@@ -5117,11 +5336,11 @@ void QtTermTCP::PTTPortChanged(int Selected)
 	else if (strcmp(NewPTTPort, "CM108") == 0)
 	{
 		Dev->CM108Label->setVisible(true);
-	#ifdef WIN32
+#ifdef WIN32
 		Dev->CM108Label->setText("CM108 VID/PID");
-	#else
+#else
 		Dev->CM108Label->setText("CM108 Device");
-	#endif
+#endif
 		Dev->VIDPID->setText(CM108Addr);
 		Dev->VIDPID->setVisible(true);
 	}
@@ -5351,7 +5570,7 @@ void QtTermTCP::OpenPTTPort()
 #ifdef USESERIAL
 			hPTTDevice = new QSerialPort(this);
 			hPTTDevice->setPortName(PTTPort);
-			hPTTDevice->setBaudRate(PTTBAUD );
+			hPTTDevice->setBaudRate(PTTBAUD);
 			hPTTDevice->setDataBits(QSerialPort::Data8);
 			hPTTDevice->setParity(QSerialPort::NoParity);
 			hPTTDevice->setStopBits(QSerialPort::OneStop);
@@ -5364,7 +5583,7 @@ void QtTermTCP::OpenPTTPort()
 			{
 				QMessageBox msgBox;
 				msgBox.setText("PTT COM Port Open Failed.");
-				msgBox.exec(); 
+				msgBox.exec();
 				qDebug() << "PTT Port Open failed";
 				delete(hPTTDevice);
 				hPTTDevice = 0;
@@ -5454,8 +5673,8 @@ void QtTermTCP::RadioPTT(bool PTTState)
 #ifdef __ARM_ARCH
 	if (useGPIO)
 	{
-//		gpioWrite(pttGPIOPin, (pttGPIOInvert ? (1 - PTTState) : (PTTState)));
-//		return;
+		//		gpioWrite(pttGPIOPin, (pttGPIOInvert ? (1 - PTTState) : (PTTState)));
+		//		return;
 	}
 
 #endif
@@ -5491,7 +5710,7 @@ void QtTermTCP::RadioPTT(bool PTTState)
 			hPTTDevice->write((char *)PTTOffCmd, PTTOffCmdLen);
 
 		hPTTDevice->flush();
-//		hPTTDevice->error();
+		//		hPTTDevice->error();
 		return;
 
 	}
@@ -5552,7 +5771,7 @@ void QtTermTCP::KISSTimer()
 		// Verify Serial port is still ok
 
 		if (m_serial && KISSConnected)
-		{	
+		{
 			m_serial->clearError();
 			m_serial->isDataTerminalReady();
 
@@ -5642,13 +5861,13 @@ extern "C" void KISS_add_stream(void * Socket);
 void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketState)
 {
 	//	myTcpSocket* sender = static_cast<myTcpSocket*>(QObject::sender());
-		
+
 	QTcpSocket* sender = static_cast<QTcpSocket*>(QObject::sender());
 
 	if (socketState == QAbstractSocket::UnconnectedState)
 	{
 		// Close any connections
-	
+
 		Ui_ListenSession * Sess = NULL;
 
 		Status3->setText("KISS Disconnected");
@@ -5677,7 +5896,7 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 	else if (socketState == QAbstractSocket::ConnectedState)
 	{
 		int i;
-	
+
 		KISSConnected = 1;
 		KISSConnecting = 0;
 
@@ -5750,12 +5969,12 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 			else if (TermMode == Single)
 				mythis->setWindowTitle("KISS Monitor Window");
 
-//			if (TermMode == Single)	
-//			{
-//				discAction->setEnabled(false);
-//				YAPPSend->setEnabled(false);
-//				connectMenu->setEnabled(false);
-//			}
+			//			if (TermMode == Single)	
+			//			{
+			//				discAction->setEnabled(false);
+			//				YAPPSend->setEnabled(false);
+			//				connectMenu->setEnabled(false);
+			//			}
 		}
 	}
 }
@@ -5771,7 +5990,7 @@ extern "C" void monitor_frame(int snd_ch, string * frame, char * code, int  tx, 
 
 	int Len;
 	char Msg[1024];
-	
+
 	if (tx)
 		sprintf(Msg, "\x1b\x10%s", frame_monitor(frame, code, tx));
 	else
@@ -5935,7 +6154,7 @@ int QtTermTCP::openSerialPort()
 	{
 		int i;
 		connect(m_serial, &QSerialPort::readyRead, this, &QtTermTCP::readSerialData);
-//		connect(m_serial, &QSerialPort::errorOccurred, this, &QtTermTCP::handleError);
+		//		connect(m_serial, &QSerialPort::errorOccurred, this, &QtTermTCP::handleError);
 
 		KISSConnected = 1;
 		KISSConnecting = 0;
@@ -6041,7 +6260,7 @@ void closeSerialPort()
 	}
 
 	m_serial = nullptr;
-	
+
 	KISSConnected = 0;
 	KISSConnecting = 0;
 
@@ -6090,7 +6309,7 @@ extern "C" void CheckUIFrame(unsigned char * path, string * data)
 
 	char Dest[10];
 	char From[10];
-		
+
 	Dest[ConvFromAX25(path, Dest)] = 0;
 	From[ConvFromAX25(&path[7], From)] = 0;
 
@@ -6124,7 +6343,7 @@ QColor QtTermTCP::setColor(QColor Colour)
 
 
 	QColor col = Colour;
-	
+
 	QColorDialog dialog;
 	dialog.setCurrentColor(Colour);
 	dialog.setOption(QColorDialog::DontUseNativeDialog);
@@ -6133,14 +6352,617 @@ QColor QtTermTCP::setColor(QColor Colour)
 		col = QVariant(dialog.currentColor()).toString();
 
 
-//	const QColor color = QColorDialog::getColor(Qt::green, this, "Select Color", 0);
+	//	const QColor color = QColorDialog::getColor(Qt::green, this, "Select Color", 0);
 
 	return col;
 }
 
+// Experimental Viewdata/Teletext/Prestel/CEEFAX Mode
+
+// Uses ideas and some code from 
+
+/***************************************************************
+ * Name:      wxTEDMain.cpp
+ * Purpose:   Teletext editor Application Frame
+ * Author:    Peter Kwan (peterk.vt80@gmail.com)
+ * Created:   2014-10-30
+ * Copyright: Peter Kwan
+ * License:
+  *
+ * Copyright (C) 2014-2022, Peter Kwan
+ *
+ * Permission to use, copy, modify, and distribute this software
+ * and its documentation for any purpose and without fee is hereby
+ * granted, provided that the above copyright notice appear in all
+ * copies and that both that the copyright notice and this
+ * permission notice and warranty disclaimer appear in supporting
+ * documentation, and that the name of the author not be used in
+ * advertising or publicity pertaining to distribution of the
+ * software without specific, written prior permission.
+ *
+ * The author disclaims all warranties with regard to this
+ * software, including all implied warranties of merchantability
+ * and fitness.  In no event shall the author be liable for any
+ * special, indirect or consequential damages or any damages
+ * whatsoever resulting from loss of use, data or profits, whether
+ * in an action of contract, negligence or other tortious action,
+ * arising out of or in connection with the use or performance of
+ * this software.
+ *************************************************************************** **/
 
 
 
+int FontWidth = 16;
+int FontHeight = 16;
+
+bool isMosaic(char ch)
+{
+	ch &= 0x7f;
+	return (ch >= 0x20 && ch < 0x40) || ch >= 0x60;
+}
 
 
+void DecodeTeleText(Ui_ListenSession * Sess, char * page)
+{
+
+	// redraw the whole teletext page
+
+	QColor fg = Qt::white;
+	QColor bg = Qt::black;
+	QColor holdColour;
+	QColor holdfg = fg;			// Colour for held graphic
+	int usehold = 0;
+	int sep = 0;
+
+	QPainter p(Sess->TTBitmap);
+
+	QSettings settings(GetConfPath(), QSettings::IniFormat);
+
+  //p.setFont(QFont("Courier", 14, QFont::Bold));
+
+	p.setFont(QFont(settings.value("FontFamily", "Courier New").value<QString>(), 14));
+
+	p.setPen(QPen(fg));
+
+	bool graphicsMode = false;
+	bool separated = false;
+	bool doubleHeight = false;
+	int skipnextrow = 99;
+	bool flashing = false;
+	bool hold = false;
+	char holdChar = 0;
+	char holdMode = 0;
+	Sess->timer.stop();
+
+	bool concealed = false;
+	char c;
+
+	fg = Qt::white;
+	bg = Qt::black;
+
+	char * ptr = page;
+
+	int col = 0;
+	int line = 0;
+
+	// XXXXXXXXTEEFAX %%# %%a %d %%b C %H:%M.%S
+
+	//p.drawText(0, 19, "P199            HAMFAX");
+
+
+	// interpret data, for now, line by line
+
+
+	while (c = *(ptr++))
+	{
+		char ch = c;
+
+		if (c == 0x11)			// Curson On ??
+			continue;
+
+		if (c == 0x14)			// Curson Off ??
+			continue;
+
+		if (c == 9)			// Curson On ??
+		{
+			col++;
+			continue;
+		}
+
+		if (c == 0x0a)
+		{
+			line++;
+
+//			if (doubleHeight)
+//				line++;
+
+			if (line > 24)
+				line = 0;
+
+			continue;
+		}
+
+		if (c == 0x1e)			// Cursor Home
+		{
+			line = col = 0;
+			c = 13;					// So we reset page flags below
+		}
+
+		if (c == 12)
+		{
+			// Clear the page
+
+			Sess->TTBitmap->fill(Qt::black);
+			Sess->TTLabel->setPixmap(QPixmap::fromImage(*Sess->TTBitmap));
+
+			line = col = 0;
+			
+			c = 13;					// So we reset page flags below
+		}
+
+		if (c == 13)
+		{
+			col = 0;
+
+			graphicsMode = false;
+			separated = false;
+			doubleHeight = false;
+			flashing = false;
+			hold = false;
+			holdChar = 0;
+			concealed = false;
+
+			fg = Qt::white;
+			bg = Qt::black;
+
+			continue;			// Next line
+		}
+
+		if (c == 0x1b) // Esc
+		{
+			// I think the control char is displayed as it was before being actioned, sa save current state
+
+			holdfg = holdColour;						// Colour if using held - may be changed before displaying
+			usehold = hold;								// May be changed
+			sep = holdMode;
+
+			char echar = *(ptr++);
+
+			if (echar == 0)
+			{
+				// Esc pair spilt - wait for rest
+
+				Sess->TTLabel->setPixmap(QPixmap::fromImage(*Sess->TTBitmap));
+				return;
+			}
+			
+			switch (echar)
+			{
+			case '@':
+//				fg = Qt::black;
+				concealed = false;    // Side effect of colour. It cancels a conceal.
+				graphicsMode = false;
+//				hold = false;
+
+				break;
+			case 'A':
+				fg = Qt::red;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+
+				break;
+			case 'B':
+				fg = Qt::green;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+				break;
+			case 'C':
+				fg = Qt::yellow;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+				break;
+			case 'D':
+				fg = Qt::blue;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+				break;
+			case 'E':
+				fg = Qt::magenta;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+				break;
+			case 'F':
+				fg = Qt::cyan;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+				break;
+			case 'G':
+				fg = Qt::white;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+				break;
+			case 'H':					// Flash
+				flashing = true;
+				Sess->timer.start(1000, Sess);
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+
+				break;
+
+			case 'I':					// Steady
+				flashing = false;
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+
+				break;
+				//		
+			case 'J':			//ttxCodeEndBox:
+			case 'K':			//ttxCodeStartBox:
+
+				concealed = false;
+				graphicsMode = false;
+				hold = false;
+					
+				break;
+			case 'L': // Normal height
+				doubleHeight = false;
+				hold = false;  
+				break;
+
+			case 'M': // Double height
+				doubleHeight = true;
+				skipnextrow = line + 1;   // ETSI: row to ignore
+				hold = false;
+				holdChar = 0;
+				break;
+			case 'P': // Graphics black
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::black;
+
+				break;
+			case 'Q': // Graphics red
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::red;
+
+				break;
+			case 'R': // Graphics green
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::green;
+
+				break;
+			case 'S': // Graphics yellow
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::yellow;
+
+				break;
+			case 'T': // Graphics blue
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::blue;
+
+				break;
+			case 'U': // Graphics magenta
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::magenta;
+
+				break;
+			case 'V': // Graphics cyan
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::cyan;
+
+				break;
+			case 'W': // Graphics white
+//				concealed = false;
+				graphicsMode = true;
+				holdColour = fg = Qt::white;
+
+				break;
+
+			case 'X': // Conceal display
+				
+				concealed = 1;
+				break;
+
+			case 'Y': // Contiguous graphics
+
+				separated = false;
+				break;
+
+			case 'Z': // Separated gfx
+
+				separated = true;
+				break;
+
+			case 0x5c: // Background black
+				bg = Qt::black;
+				break;
+
+			case 0x5d: // New background
+
+				bg = fg;
+				break;
+
+			case 0x5e: // Hold gfx
+
+				if (hold == 0)
+				{
+					hold = true;
+					holdColour = fg;
+					holdMode = separated;
+				}
+				break;
+
+			case 0x5f: // Non-hold gfx
+				hold = false;
+				break;
+
+			default:
+				echar++;					// For testign
+				break;
+
+			}  //end of esc case processing
+
+			if (usehold)
+			{
+				// We set sep and color for held char earlier 
+			
+				ch = holdChar;			// Repeat held char
+			}
+			else
+				ch = 0x0;				// Default is space
+
+
+			if (line > skipnextrow)
+				skipnextrow = 99;
+
+			if (line == skipnextrow)
+			{
+				line = line;
+			}
+			else
+			{
+				if (concealed == 0 && (flashing == 0 || Sess->TTFlashToggle == 0))
+				{
+					p.fillRect(col * 15, line * 19, 15, 19, bg);
+
+					// if double height also draw background for next row
+
+					if (doubleHeight)
+						p.fillRect(col * 15, line * 19 + 19, 15, 19, bg);
+
+
+					if (sep)
+					{
+						if (ch & 1)
+							p.fillRect(col * 15 + 2, line * 19 + 2, 5, 4, holdfg);
+						if (ch & 2)
+							p.fillRect(col * 15 + 9, line * 19 + 2, 6, 4, holdfg);
+						if (ch & 4)
+							p.fillRect(col * 15 + 2, line * 19 + 8, 5, 4, holdfg);
+						if (ch & 8)
+							p.fillRect(col * 15 + 9, line * 19 + 8, 6, 4, holdfg);
+						if (ch & 16)
+							p.fillRect(col * 15 + 2, line * 19 + 14, 5, 5, holdfg);
+						if (ch & 32)
+							p.fillRect(col * 15 + 9, line * 19 + 14, 6, 5, holdfg);
+
+					}
+					else
+					{
+						if (ch & 1)
+							p.fillRect(col * 15, line * 19, 7, 6, holdfg);
+						if (ch & 2)
+							p.fillRect(col * 15 + 7, line * 19, 8, 6, holdfg);
+						if (ch & 4)
+							p.fillRect(col * 15, line * 19 + 6, 7, 6, holdfg);
+						if (ch & 8)
+							p.fillRect(col * 15 + 7, line * 19 + 6, 8, 6, holdfg);
+						if (ch & 16)
+							p.fillRect(col * 15, line * 19 + 12, 7, 7, holdfg);
+						if (ch & 32)
+							p.fillRect(col * 15 + 7, line * 19 + 12, 8, 7, holdfg);
+					}
+				}
+			}
+			col++;
+		}
+		else
+		{
+			// Not esc - so normal or graphics
+
+			if (ch < 0x20)
+				continue;
+
+			if (line > skipnextrow)
+				skipnextrow = 99;
+
+			if (line == skipnextrow)
+			{
+				line = line;
+			}
+			else
+			{
+				if (concealed == 0 && (flashing == 0 || Sess->TTFlashToggle == 0))
+				{
+					p.fillRect(col * 15, line * 19, 15, 19, bg);
+
+					if (doubleHeight)
+						p.fillRect(col * 15, line * 19 + 19, 15, 19, bg);
+
+					p.setPen(QPen(fg));;
+
+					if (graphicsMode)
+					{
+						if (ch < 0x40)
+							ch -= 0x20;
+						else
+							if (ch >= 0x60)
+								ch -= 0x40;
+							else
+								goto isText;
+
+						holdChar = ch;
+
+						// Now have 00 - 3f 
+
+
+						// C is bit mask bit posns are
+						// 01
+						// 23
+						// 45
+						// Char cell is 15 * 19 which is a bit asymetrical
+
+						// Chars are 20 - 3f and 60 to 7f but I cant see a logic to the mapping
+
+
+						if (separated)
+						{
+							if (ch & 1)
+								p.fillRect(col * 15 + 2, line * 19 + 2, 5, 4, fg);
+							if (ch & 2)
+								p.fillRect(col * 15 + 9, line * 19 + 2, 6, 4, fg);
+							if (ch & 4)
+								p.fillRect(col * 15 + 2, line * 19 + 8, 5, 4, fg);
+							if (ch & 8)
+								p.fillRect(col * 15 + 9, line * 19 + 8, 6, 4, fg);
+							if (ch & 16)
+								p.fillRect(col * 15 + 2, line * 19 + 14, 5, 5, fg);
+							if (ch & 32)
+								p.fillRect(col * 15 + 9, line * 19 + 14, 6, 5, fg);
+
+						}
+						else
+						{
+							if (ch & 1)
+								p.fillRect(col * 15, line * 19, 7, 6, fg);
+							if (ch & 2)
+								p.fillRect(col * 15 + 7, line * 19, 8, 6, fg);
+							if (ch & 4)
+								p.fillRect(col * 15, line * 19 + 6, 7, 6, fg);
+							if (ch & 8)
+								p.fillRect(col * 15 + 7, line * 19 + 6, 8, 6, fg);
+							if (ch & 16)
+								p.fillRect(col * 15, line * 19 + 12, 7, 7, fg);
+							if (ch & 32)
+								p.fillRect(col * 15 + 7, line * 19 + 12, 8, 7, fg);
+						}
+					}
+					else
+					{
+						// Just write char at current col and line
+
+					isText:
+						char s[5] = " ";
+
+						// Some chars are in wrong char set
+
+						s[0] = ch;
+
+						if (ch == '_')
+							s[0] = '#';
+
+						else if (ch == 0x7e)					// division
+						{
+							s[0] = 0xC3;
+							s[1] = 0xB7;
+						}
+						else if (ch == 0x5e)			// up arrow
+						{
+							s[0] = 0xF0;
+							s[1] = 0x9F;
+							s[2] = 0xA0;
+							s[3] = 0x95;
+						}
+						else if (ch == 0x7f)			// up arrow
+						{
+							s[0] = 0xE2;
+							s[1] = 0x96;
+							s[2] = 0x88;
+						}
+
+						if (doubleHeight)
+								p.drawText(col * 15, line * 19 + 25, s);
+							else
+								p.drawText(col * 15, line * 19 + 15, s);
+					}
+				}
+			}
+			col++;
+		}
+
+		if (col > 39)
+		{
+			col = 0;
+			line++;
+			if (line > 24)
+				line = 0;
+
+			graphicsMode = false;
+			separated = false;
+			doubleHeight = false;
+			flashing = false;
+			hold = false;
+			holdChar = 0;
+			concealed = false;
+
+			fg = Qt::white;
+			bg = Qt::black;
+		}
+	}
+	Sess->TTLabel->setPixmap(QPixmap::fromImage(*Sess->TTBitmap));
+	return;
+
+	QFile file("D:/savepage.txt");
+	file.open(QIODevice::WriteOnly);
+	file.write(Sess->pageBuffer);
+	file.close();
+}
+
+
+void Ui_ListenSession::timerEvent(QTimerEvent *event)
+{
+	Ui_ListenSession * Sess = NULL;
+
+	// Used for flashing - resfresh window
+
+	for (int i = 0; i < _sessions.size(); ++i)
+	{
+		Sess = _sessions.at(i);
+
+		if (Sess->timer.timerId() == event->timerId())
+		{
+			if (Sess->TTActive)
+			{
+				Sess->TTFlashToggle ^= 1;
+
+				// if in Tabbed mode only refresh active tab
+
+				if (TermMode == Tabbed && Sess != ActiveSession)
+					return;
+
+				DecodeTeleText(Sess, (char *)Sess->pageBuffer);			// Re-decode same data until we get the end
+			}
+			else
+				Sess->timer.stop();
+
+			return;
+		}
+	}
+	QWidget::timerEvent(event);
+}
 
