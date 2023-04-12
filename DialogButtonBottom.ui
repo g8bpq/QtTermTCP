@@ -1,13 +1,15 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>TeleTextDialog</class>
- <widget class="QDialog" name="TeleTextDialog">
+ <author></author>
+ <comment></comment>
+ <exportmacro></exportmacro>
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>665</width>
-    <height>551</height>
+    <width>400</width>
+    <height>300</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,28 +18,32 @@
   <widget class="QWidget" name="layoutWidget">
    <property name="geometry">
     <rect>
-     <x>224</x>
-     <y>516</y>
-     <width>153</width>
-     <height>31</height>
+     <x>20</x>
+     <y>250</y>
+     <width>351</width>
+     <height>33</height>
     </rect>
    </property>
    <layout class="QHBoxLayout">
+    <property name="margin">
+     <number>0</number>
+    </property>
     <property name="spacing">
      <number>6</number>
     </property>
-    <property name="leftMargin">
-     <number>0</number>
-    </property>
-    <property name="topMargin">
-     <number>0</number>
-    </property>
-    <property name="rightMargin">
-     <number>0</number>
-    </property>
-    <property name="bottomMargin">
-     <number>0</number>
-    </property>
+    <item>
+     <spacer>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      <property name="sizeHint">
+       <size>
+        <width>131</width>
+        <height>31</height>
+       </size>
+      </property>
+     </spacer>
+    </item>
     <item>
      <widget class="QPushButton" name="okButton">
       <property name="text">
@@ -54,26 +60,14 @@
     </item>
    </layout>
   </widget>
-  <widget class="QLabel" name="Page">
-   <property name="geometry">
-    <rect>
-     <x>28</x>
-     <y>20</y>
-     <width>600</width>
-     <height>475</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>TextLabel</string>
-   </property>
-  </widget>
  </widget>
+ <pixmapfunction></pixmapfunction>
  <resources/>
  <connections>
   <connection>
    <sender>okButton</sender>
    <signal>clicked()</signal>
-   <receiver>TeleTextDialog</receiver>
+   <receiver>Dialog</receiver>
    <slot>accept()</slot>
    <hints>
     <hint type="sourcelabel">
@@ -89,7 +83,7 @@
   <connection>
    <sender>cancelButton</sender>
    <signal>clicked()</signal>
-   <receiver>TeleTextDialog</receiver>
+   <receiver>Dialog</receiver>
    <slot>reject()</slot>
    <hints>
     <hint type="sourcelabel">

@@ -2,8 +2,10 @@ cp --preserve  /mnt/Source/QT/QtTermTCP/*.cpp ./
 cp --preserve  /mnt/Source/QT/QtTermTCP/*.c ./
 cp --preserve  /mnt/Source/QT/QtTermTCP/*.h ./
 cp --preserve  /mnt/Source/QT/QtTermTCP/*.ui ./
-
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.pro ./
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.qrc ./
+cp --preserve  /mnt/Source/QT/QtTermTCP/*.ico ./
 qmake
+
 make -j4
 cp QtTermTCP /mnt/Source
-

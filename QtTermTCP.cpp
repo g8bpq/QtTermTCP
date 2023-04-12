@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.58"
+#define VersionString "0.0.0.63"
 
 // .12 Save font weight
 // .13 Display incomplete lines (ie without CR)
@@ -64,6 +64,12 @@
 // .57 Fix KISS mode incoming call handling
 // .58 Add method to toggle Normal/Teletext Mode
 //	   Fix KISS multiple session protection
+// .59 Add Teletext double height mode
+// .60 Add option to name sessions				Jan 2023
+// .61 Add VARA Init Script						Feb 2023
+// .62 Fix running AGW in single session mode	Feb 2023
+// .63 Fix handling split monitor frame (no fe in buffer) Apr 2023
+
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -99,9 +105,6 @@
 
 #include "ax25.h"
 
-#define MAXHOSTS 16
-#define MAXPORTS 32
-
 #define UNREFERENCED_PARAMETER(P)          (P)
 
 void DecodeTeleText(Ui_ListenSession * Sess, char * text);
@@ -111,6 +114,7 @@ int Port[MAXHOSTS + 1] = { 0 };
 char UserName[MAXHOSTS + 1][80] = { "" };
 char Password[MAXHOSTS + 1][80] = { "" };
 char MonParams[MAXHOSTS + 1][80] = { "" };
+char SessName[MAXHOSTS + 1][80] = { "" };
 int ListenPort = 8015;
 
 // Session Type Equates
@@ -264,6 +268,7 @@ int VARAPortFM = 8000;
 int VARAPortSAT = 8000;
 char VARATermCall[12] = "";
 char VARAPath[256] = "";
+char VARAInit[256] = "";
 char VARAPathHF[256] = "";
 char VARAPathFM[256] = "";
 char VARAPathSAT[256] = "";
@@ -457,7 +462,7 @@ int checkUTF8(unsigned char * Msg, int Len, unsigned char * out);
 
 void EncodeSettingsLine(int n, char * String)
 {
-	sprintf(String, "%s|%d|%s|%s|%s", Host[n], Port[n], UserName[n], Password[n], MonParams[n]);
+	sprintf(String, "%s|%d|%s|%s|%s|%s", Host[n], Port[n], UserName[n], Password[n], MonParams[n], SessName[n]);
 	return;
 }
 
@@ -516,9 +521,13 @@ void DecodeSettingsLine(int n, char * String)
 
 	Rest = strlop(Param, '|');
 	strcpy(Password[n], Param);
+	Param = Rest;
 
-	strcpy(MonParams[n], Rest);
+	Rest = strlop(Param, '|');
+	strcpy(MonParams[n], Param);
 
+	if (Rest)
+		strcpy(SessName[n], Rest);
 
 	free(Save);
 	return;
@@ -918,6 +927,7 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 
 		Sess->TTBitmap = new QImage(40 * 15, 25 * 19, QImage::Format_RGB32);
 		Sess->TTBitmap->fill(Qt::black);
+
 /*
 
 		char Page[4096];
@@ -930,6 +940,7 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 		Sess->TTActive = 1;
 		strcpy(Sess->pageBuffer, Page);
 		DecodeTeleText(Sess, Sess->pageBuffer);
+
 */
 
 		Sess->TTLabel->setPixmap(QPixmap::fromImage(*Sess->TTBitmap));
@@ -1183,9 +1194,18 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	connectMenu->addAction(actHost[18]);
 
 	connect(actHost[18], SIGNAL(triggered()), this, SLOT(Connect()));
+	
 	for (i = 0; i < MAXHOSTS; i++)
 	{
-		actHost[i] = new QAction(Host[i], this);
+		if (SessName[i][0])
+		{
+			char Lable[256];
+			sprintf(Lable, "%s(%s)", Host[i], SessName[i]);
+			actHost[i] = new QAction(Lable, this);
+		}
+		else
+			actHost[i] = new QAction(Host[i], this);
+
 		actHost[i]->setFont(*menufont);
 		connectMenu->addAction(actHost[i]);
 		connect(actHost[i], SIGNAL(triggered()), this, SLOT(Connect()));
@@ -1233,7 +1253,16 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	for (i = 0; i < MAXHOSTS; i++)
 	{
 		if (Host[i][0])
-			actSetup[i] = new QAction(Host[i], this);
+		{
+			char Label[256];
+
+			if (SessName[i][0])
+				sprintf(Label, "%s(%s)", Host[i], SessName[i]);
+			else
+				strcpy(Label, Host[i]);
+
+			actSetup[i] = new QAction(Label, this);
+		}
 		else
 			actSetup[i] = new QAction("New Host", this);
 
@@ -3108,6 +3137,7 @@ void GetSettings()
 	VARAHF = settings->value("VARAHF", 1).toInt();
 	VARAFM = settings->value("VARAFM", 0).toInt();
 	VARASAT = settings->value("VARASAT", 0).toInt();
+	strcpy(VARAInit, settings->value("VARAInit", "").toString().toUtf8());
 
 	strcpy(PTTPort, settings->value("PTT", "None").toString().toUtf8());
 	PTTMode = settings->value("PTTMode", 19200).toInt();
@@ -3290,6 +3320,7 @@ extern "C" void SaveSettings()
 	settings->setValue("VARATermCall", VARATermCall);
 	settings->setValue("VARAHost", VARAHost);
 	settings->setValue("VARAPort", VARAPortNum);
+	settings->setValue("VARAInit", VARAInit);
 	settings->setValue("VARAPath", VARAPath);
 	settings->setValue("VARAHostHF", VARAHostHF);
 	settings->setValue("VARAPortHF", VARAPortHF);
@@ -3763,6 +3794,7 @@ void QtTermTCP::deviceaccept()
 	VARAPortNum = Q.toInt();
 	strcpy(VARAHost, Dev->Host->text().toUtf8().toUpper());
 	strcpy(VARAPath, Dev->Path->text().toUtf8());
+	strcpy(VARAInit, Dev->InitCommands->text().toUtf8());
 
 	VARA500 = Dev->VARA500->isChecked();
 	VARA2300 = Dev->VARA2300->isChecked();
@@ -4087,12 +4119,26 @@ void QtTermTCP::onSocketStateChanged(QAbstractSocket::SocketState socketState)
 		if (Sess->SessionType == Mon)		// Mon Only
 			sprintf(Title, "Monitor Session Connected to %s", Host[Sess->CurrentHost]);
 		else
-			sprintf(Title, "Connected to %s", Host[Sess->CurrentHost]);
+		{
+			char Label[256];
+
+			if (SessName[Sess->CurrentHost][0])
+				sprintf(Label, "%s(%s)", Host[Sess->CurrentHost], SessName[Sess->CurrentHost]);
+			else
+				strcpy(Label, Host[Sess->CurrentHost]);
+
+			sprintf(Title, "Connected to %s", Label);
+		}
 
 		if (TermMode == MDI)
 			Sess->setWindowTitle(Title);
 		else if (TermMode == Tabbed)
-			tabWidget->setTabText(tabWidget->currentIndex(), Host[Sess->CurrentHost]);
+		{
+			if (SessName[Sess->CurrentHost][0])
+				tabWidget->setTabText(tabWidget->currentIndex(), SessName[Sess->CurrentHost]);
+			else
+				tabWidget->setTabText(tabWidget->currentIndex(), Host[Sess->CurrentHost]);
+		}
 		else if (TermMode == Single)
 			this->setWindowTitle(Title);
 	}
@@ -4983,7 +5029,7 @@ void QtTermTCP::onVARADataSocketStateChanged(QAbstractSocket::SocketState socket
 	}
 	else if (socketState == QAbstractSocket::ConnectedState)
 	{
-		char MyCall[32];
+		char VARACommand[256];
 
 		VARAConnected = 1;
 		VARAConnecting = 0;
@@ -4992,8 +5038,8 @@ void QtTermTCP::onVARADataSocketStateChanged(QAbstractSocket::SocketState socket
 
 		actHost[17]->setVisible(1);			// Enable VARA Connect Line
 
-		sprintf(MyCall, "MYCALL %s\r", VARATermCall);
-		VARASock->write(MyCall);
+		sprintf(VARACommand, "MYCALL %s\r", VARATermCall);
+		VARASock->write(VARACommand);
 
 		if (VARA500)
 			VARASock->write("BW500\r");
@@ -5003,6 +5049,23 @@ void QtTermTCP::onVARADataSocketStateChanged(QAbstractSocket::SocketState socket
 			VARASock->write("BW2750\r");
 
 		VARASock->write("COMPRESSION FILES\r");
+
+		if (VARAInit[0])
+		{
+			char Copy[512];
+			char * param, *context;
+
+			strcpy(Copy, VARAInit);
+
+			param = strtok_s(Copy, ",", &context);
+
+			while (param && param[0])
+			{
+				sprintf(VARACommand, "%s\r", param);
+				VARASock->write(VARACommand);
+				param = strtok_s(nullptr, ",", &context);
+			}
+		}
 
 		if (listenEnable)
 			VARASock->write("LISTEN ON\r");
@@ -5295,6 +5358,7 @@ void QtTermTCP::SetVARAParams()
 	Dev->Host->setText(VARAHost);
 	Dev->Port->setText(QString::number(VARAPortNum));
 	Dev->Path->setText(VARAPath);
+	Dev->InitCommands->setText(VARAInit);
 }
 
 void QtTermTCP::PTTPortChanged(int Selected)
@@ -6539,7 +6603,7 @@ void DecodeTeleText(Ui_ListenSession * Sess, char * page)
 			switch (echar)
 			{
 			case '@':
-//				fg = Qt::black;
+				fg = Qt::black;
 				concealed = false;    // Side effect of colour. It cancels a conceal.
 				graphicsMode = false;
 //				hold = false;
@@ -6895,10 +6959,41 @@ void DecodeTeleText(Ui_ListenSession * Sess, char * page)
 							s[2] = 0x88;
 						}
 
+//						if (doubleHeight)
+	//							p.drawText(col * 15, line * 19 + 25, s);
+		//					else
+			//					p.drawText(col * 15, line * 19 + 15, s);
+
+						// if double height draw normally then copy pixels each row of pixels to two scanlines (starting at the bottom)
+
 						if (doubleHeight)
-								p.drawText(col * 15, line * 19 + 25, s);
-							else
-								p.drawText(col * 15, line * 19 + 15, s);
+						{
+							int inscanline = line * 19 + 18;
+							int outscanline = line * 19 + 35;
+							unsigned char * inptr = Sess->TTBitmap->scanLine(inscanline);
+							unsigned char * outptr = Sess->TTBitmap->scanLine(outscanline);
+							int linelen = Sess->TTBitmap->bytesPerLine();
+							int charlen = linelen / 40;			// bytes per char position
+
+							p.drawText(col * 15, line * 19 + 16, s);
+
+							inptr += col * charlen;
+							outptr += col * charlen;
+
+							for (int i = 0; i < 18; i++)
+							{
+								memcpy(outptr, inptr, charlen);
+								outptr -= linelen;
+								memcpy(outptr, inptr, charlen);
+
+								inptr -= linelen;
+								outptr -= linelen;
+
+							}
+						}
+						else
+							p.drawText(col * 15, line * 19 + 15, s);
+
 					}
 				}
 			}

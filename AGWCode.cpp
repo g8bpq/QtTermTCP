@@ -495,6 +495,15 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 			AGWUsers->MonSess = nullptr;
 		}
 
+		if (TermMode == Single && (singlemodeFormat & Mon))
+		{
+			//Re-renable TCP connects
+
+			for (int i = 0; i < MAXHOSTS; i++)
+				actHost[i]->setVisible(1);
+		}
+
+
 		AGWConnected = 0;
 	}
 	else if (socketState == QAbstractSocket::ConnectedState)
@@ -580,7 +589,15 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 			else if (TermMode == Single)
 				mythis->setWindowTitle("AGW Monitor Window");
 
-			if (TermMode != Tabbed)				// Not ideal, but AGW mon window is unlikely to be active window
+			if (TermMode == Single && (singlemodeFormat & Mon))
+			{
+				// Can't be connected, so leave state alone, but disable TCP connects
+
+				for (int i = 0; i < MAXHOSTS; i++)
+					actHost[i]->setVisible(0);
+
+			}
+			else if (TermMode != Tabbed)				// Not ideal, but AGW mon window is unlikely to be active window
 			{
 				discAction->setEnabled(false);
 				YAPPSend->setEnabled(false);

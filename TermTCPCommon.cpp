@@ -349,6 +349,7 @@ MonLoop:
 			return;
 		}
 
+		MonLen = len;				// in case no fe
 
 		Sess->MonData = 1;
 

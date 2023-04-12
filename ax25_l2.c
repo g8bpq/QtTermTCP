@@ -1497,7 +1497,6 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 	if (!is_correct_path(path, pid))
 	{
 		// Duff path - if Non-AX25 filter active log and discard
-
 	}
 
 	monitor_frame(snd_ch, frame, "", 0, excluded);				// Monitor
@@ -1512,7 +1511,7 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 		return;							// Don't process if still unused digis
 	}
 
-	// Clear reapeated bits from digi path
+	// Clear repeated bits from digi path
 
 	ptr = &path[13];
 
@@ -1560,7 +1559,7 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 
 		if (f_id != U_SABM)				// Not SABM
 		{
-			// 			// send DM if P set
+			// send DM if P set
 
 			if (cr == SET_C)
 			{

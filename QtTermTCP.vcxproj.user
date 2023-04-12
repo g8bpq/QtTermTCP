@@ -8,9 +8,15 @@
     <QtLastBackgroundBuild>2022-05-19T07:28:58.9302359Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <QtLastBackgroundBuild>2022-11-21T13:52:08.2843113Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2023-04-12T13:14:53.1644359Z</QtLastBackgroundBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="QtSettings">
+    <QtLastBackgroundBuild>2023-02-08T10:47:28.1396474Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <QtLastBackgroundBuild>2022-11-20T17:39:52.6268704Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2023-03-06T08:27:08.3742630Z</QtLastBackgroundBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="QtSettings">
+    <QtLastBackgroundBuild>2023-02-08T10:47:27.7430420Z</QtLastBackgroundBuild>
   </PropertyGroup>
 </Project>

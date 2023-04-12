@@ -29,7 +29,8 @@
 #include <QProcess>
 #include <QtSerialPort/QSerialPort>
 
-
+#define MAXHOSTS 16
+#define MAXPORTS 32
 
 QT_BEGIN_NAMESPACE
 class QComboBox;

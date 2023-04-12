@@ -41,6 +41,7 @@ QLineEdit *hostEdit;
 QLineEdit *portEdit;
 QLineEdit *userEdit;
 QLineEdit *passEdit;
+QLineEdit *SNameEdit;
 
 extern QAction *actHost[17];
 extern QAction *actSetup[16];
@@ -53,6 +54,8 @@ extern char Host[MAXHOSTS + 1][100];
 extern int Port[MAXHOSTS + 1];
 extern char UserName[MAXHOSTS + 1][80];
 extern char Password[MAXHOSTS + 1][80];
+extern char SessName[MAXHOSTS + 1][80];
+
 extern char MYCALL[32];
 
 QLineEdit *TermCall;
@@ -734,6 +737,9 @@ TabDialog::TabDialog(QWidget *parent) : QDialog(parent)
 	QLabel *passLabel = new QLabel(tr("Password:"));
 	passEdit = new QLineEdit(Password[ConfigHost]);
 
+	QLabel *SNameLabel = new QLabel(tr("Session Name"));
+	SNameEdit = new QLineEdit(SessName[ConfigHost]);
+
 	layout->addWidget(hostLabel);
 	layout->addWidget(hostEdit);
 	layout->addWidget(portLabel);
@@ -742,6 +748,8 @@ TabDialog::TabDialog(QWidget *parent) : QDialog(parent)
 	layout->addWidget(userEdit);
 	layout->addWidget(passLabel);
 	layout->addWidget(passEdit);
+	layout->addWidget(SNameLabel);
+	layout->addWidget(SNameEdit);
 
 	layout->addStretch(1);
 	layout->addWidget(buttonBox);
@@ -838,11 +846,22 @@ void TabDialog::myaccept()
 	ptr = qb.data();
 	strcpy(Password[ConfigHost], ptr);
 
-	actHost[ConfigHost]->setText(Host[ConfigHost]);
-	actSetup[ConfigHost]->setText(Host[ConfigHost]);
+	val = SNameEdit->text();
+	qb = val.toLatin1();
+	ptr = qb.data();
+	strcpy(SessName[ConfigHost], ptr);
+
+	char Label[256];
+
+	if (ptr[0])
+		sprintf(Label, "%s(%s)", Host[ConfigHost], SessName[ConfigHost]);
+	else
+		strcpy(Label, Host[ConfigHost]);
+
+	actHost[ConfigHost]->setText(Label);
+	actSetup[ConfigHost]->setText(Label);
 
 	SaveSettings();
-
 
 	TabDialog::accept();
 
