@@ -22,6 +22,8 @@ extern QColor outputText;
 extern QColor EchoText;
 extern QColor WarningText;
 
+extern QColor newTabText;
+
 extern QTabWidget *tabWidget;
 extern QWidget * mythis;
 
@@ -1039,7 +1041,9 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 				else if (TermMode == Tabbed)
 				{
 					tabWidget->setTabText(i, CallFrom);
+					tabWidget->tabBar()->setTabTextColor(i, newTabText);
 				}
+
 				else if (TermMode == Single)
 					mythis->setWindowTitle(Title);
 

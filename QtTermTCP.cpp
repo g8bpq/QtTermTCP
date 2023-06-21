@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.63"
+#define VersionString "0.0.0.66"
 
 // .12 Save font weight
 // .13 Display incomplete lines (ie without CR)
@@ -69,7 +69,9 @@
 // .61 Add VARA Init Script						Feb 2023
 // .62 Fix running AGW in single session mode	Feb 2023
 // .63 Fix handling split monitor frame (no fe in buffer) Apr 2023
-
+// .64 Add Clear Screen command to context menu Apr 2023
+// .65 Fixes for 63 port version of BPQ			May 2023
+// .66 Colour Tab of incoming calls				June 2023
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -149,6 +151,9 @@ QColor EchoText = qRgb(0, 0, 255);
 QColor WarningText = qRgb(255, 0, 0);
 QColor inputBackground = qRgb(255, 255, 0);
 QColor inputText = qRgb(0, 0, 255);
+
+QColor newTabText = qRgb(255, 0, 0);		// Red
+QColor oldTabText = qRgb(0, 0, 0);			// Black
 
 
 // There is something odd about this. It doesn't match BPQTERMTCP though it looks the same
@@ -373,7 +378,7 @@ QAction *MonSup;
 QAction *MonNodes;
 QAction *MonUI;
 QAction *MonColour;
-QAction *MonPort[33];
+QAction *MonPort[65];
 QAction *actChatMode;
 QAction *actAutoTeletext;
 QAction *actBells;
@@ -968,6 +973,17 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 
 		mythis->connect(Sess->termWindow, SIGNAL(customContextMenuRequested(const QPoint&)),
 			parent, SLOT(showContextMenuT(const QPoint &)));
+
+	}
+
+	if (Type == Mon)
+	{
+		// Monitor Only
+
+		Sess->monWindow->setContextMenuPolicy(Qt::CustomContextMenu);
+
+		mythis->connect(Sess->monWindow, SIGNAL(customContextMenuRequested(const QPoint&)),
+			parent, SLOT(showContextMenuMOnly(const QPoint &)));
 
 	}
 
@@ -1611,6 +1627,15 @@ void QtTermTCP::setSplit()
 
 	eventFilter(Parent, &event);
 }
+
+void QtTermTCP::ClearScreen()
+{
+	QAction * sender = static_cast<QAction*>(QObject::sender());
+	QTextEdit * window = static_cast<QTextEdit*>(sender->parentWidget());
+	window->clear();
+}
+
+
 void QtTermTCP::showContextMenuMT(const QPoint &pt)				// Term Window
 {
 	// Monitor and Terminal (Term Half)
@@ -1624,14 +1649,37 @@ void QtTermTCP::showContextMenuMT(const QPoint &pt)				// Term Window
 
 	QAction * actSplit = new QAction("Set Monitor/Output Split", sender);
 	QAction * actVDMode = new QAction("Toggle Viewdata Mode", sender);
+	QAction * actClear = new QAction("Clear Screen Buffer", sender);
 
 	menu->addAction(actSplit);
 	menu->addAction(actVDMode);
+	menu->addAction(actClear);
 
 	splitY = pt.y() + termX;
 
 	connect(actSplit, SIGNAL(triggered()), this, SLOT(setSplit()));
 	connect(actVDMode, SIGNAL(triggered()), this, SLOT(setVDMode()));
+	connect(actClear, SIGNAL(triggered()), this, SLOT(ClearScreen()));
+
+	menu->exec(sender->mapToGlobal(pt));
+	delete menu;
+}
+
+void QtTermTCP::showContextMenuMOnly(const QPoint &pt)
+{
+	// Monitor only
+
+	QTextEdit* sender = static_cast<QTextEdit*>(QObject::sender());
+
+	QMenu *menu = sender->createStandardContextMenu();
+
+	QString style = "QMenu {border-radius:15px; background-color: white;margin: 2px; border: 1px solid rgb(58, 80, 116); color:  rgb(58, 80, 116);}QMenu::separator {height: 2px;background: rgb(58, 80, 116);margin-left: 10px;margin-right: 5px;}";
+	menu->setStyleSheet(style);
+
+	QAction * actClear = new QAction("Clear Screen Buffer", sender);
+
+	menu->addAction(actClear);
+	connect(actClear, SIGNAL(triggered()), this, SLOT(ClearScreen()));
 
 	menu->exec(sender->mapToGlobal(pt));
 	delete menu;
@@ -1651,10 +1699,14 @@ void QtTermTCP::showContextMenuT(const QPoint &pt)				// Term Window
 
 
 	QAction * actVDMode = new QAction("Toggle Viewdata Mode", sender);
+	QAction * actClear = new QAction("Clear Screen Buffer", sender);
 
 	menu->addAction(actVDMode);
+	menu->addAction(actClear);
 
 	connect(actVDMode, SIGNAL(triggered()), this, SLOT(setVDMode()));
+	connect(actClear, SIGNAL(triggered()), this, SLOT(ClearScreen()));
+
 	menu->exec(sender->mapToGlobal(pt));
 	delete menu;
 }
@@ -1694,12 +1746,15 @@ void QtTermTCP::showContextMenuM(const QPoint &pt)				// Mon Window
 	menu->setStyleSheet(style);
 
 	QAction * actSplit = new QAction("Set Monitor/Output Split", sender);
+	QAction * actClear = new QAction("Clear Screen Buffer", sender);
 
 	menu->addAction(actSplit);
+	menu->addAction(actClear);
 
 	splitY = pt.y();
 
 	connect(actSplit, SIGNAL(triggered()), this, SLOT(setSplit()));
+	connect(actClear, SIGNAL(triggered()), this, SLOT(ClearScreen()));
 
 	menu->exec(sender->mapToGlobal(pt));
 	delete menu;
@@ -1777,6 +1832,8 @@ void QtTermTCP::tabSelected(int Current)
 			return;
 
 		ActiveSession = Sess;
+
+		tabWidget->tabBar()->setTabTextColor(tabWidget->currentIndex(), oldTabText);
 
 		if (Sess->clientSocket || Sess->AGWSession || Sess->KISSSession || Sess->KISSMode)
 		{
@@ -2220,15 +2277,14 @@ void QtTermTCP::menuChecked()
 	else
 	{
 		// look for port entry
-
-		for (int i = 0; i < MAXPORTS; i++)
+		for (int i = 0; i < MAXPORTS + 1; i++)
 		{
 			if (Act == MonPort[i])
 			{
 				unsigned long long mmask;
 
-				if (i == 0)				// BBS Mon - use bit 32
-					mmask = 1ll << 32;
+				if (i == 0)							// BBS Mon - use bit 63 (Port 64)
+					mmask = 1ll << 63;
 				else
 					mmask = 1ll << (i - 1);
 
@@ -2645,6 +2701,19 @@ extern "C" void WritetoOutputWindowEx(Ui_ListenSession * Sess, unsigned char * B
 	{
 		if (AlertBeep)
 			myBeep();
+	}
+
+	// if tabbed and not active tab set tab label red
+
+	if (TermMode == Tabbed)
+	{
+		if (Sess->monWindow != termWindow)		// Not if Monitor
+		{
+			if (ActiveSession != Sess)
+			{
+				tabWidget->tabBar()->setTabTextColor(Sess->Tab, newTabText);
+			}
+		}
 	}
 
 	LastWrite = NOW;
@@ -3992,7 +4061,9 @@ void QtTermTCP::onNewConnection()
 	else if (TermMode == Tabbed)
 	{
 		tabWidget->setTabText(i, datas.data());
+		tabWidget->tabBar()->setTabTextColor(i, newTabText);
 	}
+
 	else if (TermMode == Single)
 		this->setWindowTitle(Title);
 
@@ -4861,7 +4932,10 @@ void QtTermTCP::VARAreadyRead()
 					if (TermMode == MDI)
 						Sess->setWindowTitle(Title);
 					else if (TermMode == Tabbed)
+					{
 						tabWidget->setTabText(Sess->Tab, CallFrom);
+						tabWidget->tabBar()->setTabTextColor(Sess->Tab, newTabText);
+					}
 					else if (TermMode == Single)
 						mythis->setWindowTitle(Title);
 
@@ -6139,6 +6213,7 @@ extern "C" Ui_ListenSession * ax25IncommingConnect(TAX25Port * AX25Sess)
 		else if (TermMode == Tabbed)
 		{
 			tabWidget->setTabText(i, AX25Sess->corrcall);
+			tabWidget->tabBar()->setTabTextColor(i, newTabText);
 		}
 		else if (TermMode == Single)
 			mythis->setWindowTitle(Title);
@@ -6517,7 +6592,7 @@ void DecodeTeleText(Ui_ListenSession * Sess, char * page)
 	// interpret data, for now, line by line
 
 
-	while (c = *(ptr++))
+	while ((c = *(ptr++)))
 	{
 		char ch = c;
 

@@ -30,7 +30,7 @@
 #include <QtSerialPort/QSerialPort>
 
 #define MAXHOSTS 16
-#define MAXPORTS 32
+#define MAXPORTS 64
 
 QT_BEGIN_NAMESPACE
 class QComboBox;
@@ -161,8 +161,10 @@ private slots:
 	void onTEselectionChanged();
 	void onLEselectionChanged();
 	void setSplit();
+	void ClearScreen();
 	void setVDMode();
 	void showContextMenuMT(const QPoint & pt);
+	void showContextMenuMOnly(const QPoint & pt);
 	void onNewConnection();
 	void onSocketStateChanged(QAbstractSocket::SocketState socketState);
 	void updateWindowMenu();
