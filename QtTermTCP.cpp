@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.66"
+#define VersionString "0.0.0.67"
 
 // .12 Save font weight
 // .13 Display incomplete lines (ie without CR)
@@ -72,6 +72,8 @@
 // .64 Add Clear Screen command to context menu Apr 2023
 // .65 Fixes for 63 port version of BPQ			May 2023
 // .66 Colour Tab of incoming calls				June 2023
+// .67 Add config Yapp RX Size dialog			July 2023
+//	   Fix 63 port montoring
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -215,6 +217,7 @@ extern int AlertBeep;
 extern int AlertFreq;
 extern int AlertDuration;
 extern int ConnectBeep;
+extern int MaxRXSize;
 
 extern int AutoTeletext;
 
@@ -397,6 +400,7 @@ QAction *actColours;
 QAction *actmyFonts;
 QAction *YAPPSend;
 QAction *YAPPSetRX;
+QAction *YAPPSetSize;
 QAction *singleAct;
 QAction *singleAct2;
 QAction *MDIAct;
@@ -457,6 +461,8 @@ void closeSerialPort();
 
 extern void initUTF8();
 int checkUTF8(unsigned char * Msg, int Len, unsigned char * out);
+
+QDialog * deviceUI;
 
 #include <QStandardPaths>
 #include <sys/stat.h>
@@ -1343,7 +1349,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	KISSAction->setFont(*menufont);
 
 
-	actChatMode = setupMenuLine(setupMenu, (char *)"Chat Terminal Mode", this, ChatMode);
+	actChatMode = setupMenuLine(setupMenu, (char *)"Chat Terminal Mode (Send Keepalives)", this, ChatMode);
 	actAutoTeletext = setupMenuLine(setupMenu, (char *)"Auto switch to Teletext", this, AutoTeletext);
 	actBells = setupMenuLine(setupMenu, (char *)"Enable Bells", this, Bells);
 	actStripLF = setupMenuLine(setupMenu, (char *)"Strip Line Feeds", this, StripLF);
@@ -1408,15 +1414,19 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	YAPPSend = new QAction("Send File", this);
 	YAPPSetRX = new QAction("Set Receive Directory", this);
+	YAPPSetSize = new QAction("Set Max Size", this);
 	YAPPSend->setFont(*menufont);
 	YAPPSetRX->setFont(*menufont);
+	YAPPSetSize->setFont(*menufont);
 
 	YAPPMenu->addAction(YAPPSend);
 	YAPPMenu->addAction(YAPPSetRX);
+	YAPPMenu->addAction(YAPPSetSize);
 	YAPPSend->setEnabled(false);
 
 	connect(YAPPSend, SIGNAL(triggered()), this, SLOT(doYAPPSend()));
 	connect(YAPPSetRX, SIGNAL(triggered()), this, SLOT(doYAPPSetRX()));
+	connect(YAPPSetSize, SIGNAL(triggered()), this, SLOT(doYAPPSetSize()));
 
 
 	but3 = new QToolButton();
@@ -1852,8 +1862,8 @@ void QtTermTCP::tabSelected(int Current)
 
 		if (Sess->PortMonString[0])
 		{
-			char * ptr = (char *)malloc(1024);
-			memcpy(ptr, Sess->PortMonString, 1024);
+			char * ptr = (char *)malloc(2048);
+			memcpy(ptr, Sess->PortMonString, 2048);
 
 			int NumberofPorts = atoi((char *)&ptr[2]);
 			char *p, *Context;
@@ -1863,7 +1873,7 @@ void QtTermTCP::tabSelected(int Current)
 
 			// Remove old Monitor menu
 
-			for (int i = 0; i < 32; i++)
+			for (int i = 0; i < 64; i++)
 			{
 				SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 			}
@@ -1881,9 +1891,9 @@ void QtTermTCP::tabSelected(int Current)
 				sprintf(msg, "Port %s", p);
 
 				if (m == 0)
-					m = 33;
+					m = 64;
 
-				if (Sess->portmask & (1ll << (m - 1)))
+				if (Sess->portmask & ((uint64_t)1 << (m - 1)))
 					SetPortMonLine(portnum, msg, 1, 1);
 				else
 					SetPortMonLine(portnum, msg, 1, 0);
@@ -2017,7 +2027,7 @@ void QtTermTCP::Connect()
 
 	// Remove old Monitor menu
 
-	for (i = 0; i < 32; i++)
+	for (i = 0; i < 64; i++)
 	{
 		SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 	}
@@ -2182,6 +2192,51 @@ void QtTermTCP::doYAPPSetRX()
 	}
 }
 
+Ui_SizeDialog * YappSize;
+
+void QtTermTCP::doYAPPSetSize()
+{
+	// This runs the VARA Configuration dialog
+
+	char valChar[80];
+
+	YappSize = new(Ui_SizeDialog);
+
+	QDialog UI;
+
+	YappSize->setupUi(&UI);
+
+	UI.setFont(*menufont);
+	deviceUI = &UI;
+
+	sprintf(valChar, "%d", MaxRXSize);
+
+	YappSize->maxSize->setText(valChar);
+
+	QObject::connect(YappSize->okButton, SIGNAL(clicked()), this, SLOT(sizeaccept()));
+	QObject::connect(YappSize->cancelButton, SIGNAL(clicked()), this, SLOT(sizereject()));
+
+	UI.exec();
+}
+
+void QtTermTCP::sizeaccept()
+{
+	QVariant Q;
+	Q = YappSize->maxSize->text();
+
+	MaxRXSize = Q.toInt();
+	SaveSettings();
+	delete(YappSize);
+}
+
+
+void QtTermTCP::sizereject()
+{
+	delete(YappSize);
+	deviceUI->reject();
+}
+
+
 void QtTermTCP::menuChecked()
 {
 	QAction * Act = static_cast<QAction*>(QObject::sender());
@@ -2281,12 +2336,12 @@ void QtTermTCP::menuChecked()
 		{
 			if (Act == MonPort[i])
 			{
-				unsigned long long mmask;
+				uint64_t mmask;
 
 				if (i == 0)							// BBS Mon - use bit 63 (Port 64)
-					mmask = 1ll << 63;
+					mmask = (uint64_t)1 << 63;
 				else
-					mmask = 1ll << (i - 1);
+					mmask = (uint64_t)1 << (i - 1);
 
 				if (state)
 					ActiveSession->portmask |= mmask;
@@ -3154,6 +3209,7 @@ void GetSettings()
 	ConnectBeep = settings->value("ConnectBeep", 1).toInt();
 	SavedHost = settings->value("CurrentHost", 0).toInt();
 	strcpy(YAPPPath, settings->value("YAPPPath", "").toString().toUtf8());
+	MaxRXSize = settings->value("MaxRXSize", 100000).toInt();
 
 	listenPort = settings->value("listenPort", 8015).toInt();
 	listenEnable = settings->value("listenEnable", false).toBool();
@@ -3316,6 +3372,8 @@ extern "C" void SaveSettings()
 	settings->setValue("CurrentHost", SavedHost);
 
 	settings->setValue("YAPPPath", YAPPPath);
+	settings->setValue("MaxRXSize", MaxRXSize);
+
 	settings->setValue("listenPort", listenPort);
 	settings->setValue("listenEnable", listenEnable);
 	settings->setValue("listenCText", listenCText);
@@ -3579,8 +3637,6 @@ Ui_Dialog * Dev;
 
 static Ui_KISSDialog * KISS;
 static Ui_ColourDialog * COLOURS;
-
-QDialog * deviceUI;
 
 
 char NewPTTPort[80];
@@ -4441,8 +4497,8 @@ void QtTermTCP::xon_mdiArea_changed()
 
 			if (Sess->PortMonString[0])
 			{
-				char * ptr = (char *)malloc(1024);
-				memcpy(ptr, Sess->PortMonString, 1024);
+				char * ptr = (char *)malloc(2048);
+				memcpy(ptr, Sess->PortMonString, 2048);
 
 				int NumberofPorts = atoi((char *)&ptr[2]);
 				char *p, *Context;
@@ -4452,7 +4508,7 @@ void QtTermTCP::xon_mdiArea_changed()
 
 				// Remove old Monitor menu
 
-				for (int i = 0; i < 32; i++)
+				for (int i = 0; i < 64; i++)
 				{
 					SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 				}
@@ -4470,7 +4526,7 @@ void QtTermTCP::xon_mdiArea_changed()
 					sprintf(msg, "Port %s", p);
 
 					if (portnum == 0)
-						portnum = 33;
+						portnum = 64;
 
 					if (Sess->portmask & (1ll << (portnum - 1)))
 						SetPortMonLine(portnum, msg, 1, 1);

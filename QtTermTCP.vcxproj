@@ -444,6 +444,7 @@
     </QtUic>
     <QtUic Include="VARAConfig.ui">
     </QtUic>
+    <QtUic Include="YAPPRxSize.ui" />
   </ItemGroup>
   <ItemGroup>
     <None Include="QtTermTCP.ico" />

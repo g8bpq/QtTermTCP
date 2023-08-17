@@ -3,7 +3,7 @@
 #include <QMainWindow>
 #include "ui_QtTermTCP.h"
 //#include "ui_AGWParams.h"
-//#include "ui_AGWConnect.h"
+#include "ui_YAPPRxSize.h"
 #include "ui_ColourConfig.h"
 #include "ui_VARAConfig.h"
 #include "ui_KISSConfig.h"
@@ -83,8 +83,8 @@ public:
 	int MonSaveLen;
 	char MonSave[4096];
 
-	char PortMonString[1024];		// 32 ports 32 Bytes
-	unsigned long long portmask;
+	char PortMonString[2048];		// 64 ports 32 Bytes
+	uint64_t portmask;
 	int mtxparam;
 	int mcomparam;
 	int monUI;
@@ -136,6 +136,9 @@ private slots:
 	void Disconnect();
 	void doYAPPSend();
 	void doYAPPSetRX();
+	void doYAPPSetSize();
+	void sizeaccept();
+	void sizereject();
 	void menuChecked();
 	void Connect();
 	void displayError(QAbstractSocket::SocketError socketError);

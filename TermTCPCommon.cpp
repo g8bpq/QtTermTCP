@@ -316,13 +316,13 @@ MonLoop:
 
 			// Save for changes of Window
 
-			if (len < 1024)
+			if (len < 2048)
 				memcpy(Sess->PortMonString, ptr, len);
 
 			
 			// Remove old menu
 			
-			for (i = 0; i < 33; i++)
+			for (i = 0; i < 65; i++)
 			{
 				SetPortMonLine(i, (char *)"", 0, 0);
 			}
@@ -339,7 +339,7 @@ MonLoop:
 				sprintf(msg, "Port %s", p);
 
 				if (m == 0)
-					m = 33;
+					m = 64;
 
 				if (Sess->portmask & (1ll << (m - 1)))
 					SetPortMonLine(portnum, msg, 1, 1);
@@ -563,7 +563,7 @@ int InnerProcessYAPPMessage(Ui_ListenSession * Sess, UCHAR * Msg, int Len)
 		{
 			Mess[0] = NAK;
 			Mess[1] = sprintf(&Mess[2], "File %s size %d larger than limit %d\r", ARQFilename, FileSize, MaxRXSize);
-			mySleep(1000);				// To give YAPP Msg tome to be sent
+			mySleep(1000);				// To give YAPP Msg time to be sent
 			QueueMsg(Sess, Mess, Mess[1] + 2);
 
 			len = sprintf((char *)Buffer, "YAPP File %s size %d larger than limit %d\r", ARQFilename, FileSize, MaxRXSize);

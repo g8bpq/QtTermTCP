@@ -40,6 +40,7 @@ FORMS    += QtTermTCP.ui\
         VARAConfig.ui \
         KISSConfig.ui \
 		ColourConfig.ui \
+		YAPPRxSize.ui \
         AGWConnect.ui
 
 RESOURCES += QtTermTCP.qrc
