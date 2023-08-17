@@ -2,6 +2,7 @@
 
 #define VersionString "0.0.0.67"
 
+
 // .12 Save font weight
 // .13 Display incomplete lines (ie without CR)
 // .14 Add YAPP and Listen Mode
@@ -74,6 +75,7 @@
 // .66 Colour Tab of incoming calls				June 2023
 // .67 Add config Yapp RX Size dialog			July 2023
 //	   Fix 63 port montoring
+
 
 #define _CRT_SECURE_NO_WARNINGS
 
