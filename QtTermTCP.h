@@ -143,7 +143,8 @@ private slots:
 	void Connect();
 	void displayError(QAbstractSocket::SocketError socketError);
 	void readyRead();
-
+	void showContextMenu(const QPoint & point);
+	void autoConnectChecked();
 	void LreturnPressed(Ui_ListenSession * LUI);
 	void LDisconnect(Ui_ListenSession * LUI);
 	void SetupHosts();

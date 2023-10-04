@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.67"
+#define VersionString "0.0.0.68"
 
 
 // .12 Save font weight
@@ -75,6 +75,9 @@
 // .66 Colour Tab of incoming calls				June 2023
 // .67 Add config Yapp RX Size dialog			July 2023
 //	   Fix 63 port montoring
+
+// .68 Remember last used host on restart		Sept 2023
+//	   Add AutoConnect in Tabbed Mode
 
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -437,6 +440,10 @@ QList<Ui_ListenSession *> _sessions;
 #define Listen 4
 
 int TabType[10] = { Term, Term + Mon, Term, Term, Term, Term, Mon, Mon, Mon };
+
+int AutoConnect[10] = {0, 0 ,0, 0, 0, 0, 0, 0, 0, 0};
+
+int currentHost[10] = {0, 0 ,0, 0, 0, 0, 0, 0, 0, 0};
 
 int listenPort = 8015;
 extern "C" int listenEnable;
@@ -1109,21 +1116,37 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	}
 	else if (TermMode == Tabbed)
 	{
+		Ui_ListenSession * Sess;
+		int index = 0;
+	
 		tabWidget = new QTabWidget(this);
+
+		tabWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+
+		connect(tabWidget, SIGNAL(customContextMenuRequested(const QPoint &)), SLOT(showContextMenu(const QPoint &)));
 
 		ui.verticalLayout->addWidget(tabWidget);
 
 		tabWidget->setTabPosition(QTabWidget::South);
 
-		newWindow(this, TabType[0], "Sess 1");
-		newWindow(this, TabType[1], "Sess 2");
-		newWindow(this, TabType[2], "Sess 3");
-		newWindow(this, TabType[3], "Sess 4");
-		newWindow(this, TabType[4], "Sess 5");
-		newWindow(this, TabType[5], "Sess 6");
-		newWindow(this, TabType[6], "Sess 7");
-		newWindow(this, TabType[7], "Monitor");
-		newWindow(this, TabType[8], "Monitor");
+		Sess = newWindow(this, TabType[0], "Sess 1");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[1], "Sess 2");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[2], "Sess 3");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[3], "Sess 4");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[4], "Sess 5");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[5], "Sess 6");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[6], "Sess 7");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[7], "Monitor");
+		Sess->CurrentHost = currentHost[index++];
+		Sess = newWindow(this, TabType[8], "Monitor");
+		Sess->CurrentHost = currentHost[index++];
 
 		ActiveSession = _sessions.at(0);
 
@@ -1471,6 +1494,8 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 		Ui_ListenSession * Sess = newWindow(this, singlemodeFormat);
 
 		ActiveSession = Sess;
+		Sess->CurrentHost = currentHost[0];
+
 		ui.verticalLayout->addWidget(Sess);
 
 		connectMenu->setEnabled(true);
@@ -1481,6 +1506,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	if (TermMode == MDI)
 	{
 		int n = atoi(sessionList);
+		int index = 0;
 
 		char *p, *Context;
 		char delim[] = "|";
@@ -1497,7 +1523,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 			Ui_ListenSession * Sess = newWindow(this, type);
 
-			Sess->CurrentHost = host;
+			Sess->CurrentHost = currentHost[index++];;
 
 			QRect r(leftx, topx, rightx - leftx, bottomx - topx);
 
@@ -1531,7 +1557,88 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	memset(axMYCALL, 0, 7);
 	ConvToAX25(MYCALL, axMYCALL);
+
+	// Do any autoconnects
+
+	for (int i = 0; i < _sessions.size(); ++i)
+	{
+		if (AutoConnect[i] > 0)
+		{
+			Ui_ListenSession * Sess = _sessions.at(i);
+			
+			Sess->clientSocket = new myTcpSocket();
+			Sess->clientSocket->Sess = Sess;
+
+			connect(Sess->clientSocket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(displayError(QAbstractSocket::SocketError)));
+			connect(Sess->clientSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
+			connect(Sess->clientSocket, SIGNAL(stateChanged(QAbstractSocket::SocketState)), this, SLOT(onSocketStateChanged(QAbstractSocket::SocketState)));
+
+			Sess->clientSocket->connectToHost(&Host[Sess->CurrentHost][0], Port[Sess->CurrentHost]);
+		}
+	}
+
 }
+
+void QtTermTCP::showContextMenu(const QPoint &point)
+{
+	if (point.isNull())
+		return;
+
+	QTabBar* tabBar = tabWidget->tabBar();
+	QRect Wrect = tabWidget->rect();
+	QRect Brect = tabBar->rect();
+	QPoint myPoint = point;
+
+	int n = myPoint.y() - (Wrect.height() - Brect.height());
+	
+	myPoint.setY(n); 
+
+//	QPoint tabBarPoint = mapTo(tabBar, point);
+
+	int tabIndex =  tabBar->tabAt(myPoint);
+
+	QMenu menu(this);
+
+	QAction * Act = new QAction("AutoConnect on load", this);
+	Act->setObjectName(QString::number(tabIndex));
+
+	menu.addAction(Act);
+
+	Act->setCheckable(true);
+
+	if (AutoConnect[tabIndex] <= 0)
+		Act->setChecked(false);
+	else
+		Act->setChecked(true);
+
+	connect(Act, SIGNAL(triggered()), this, SLOT(autoConnectChecked()));
+
+	QAction * selected_action = menu.exec(tabWidget->mapToGlobal(point));
+
+}
+
+void QtTermTCP::autoConnectChecked()
+{
+	QAction * Act = static_cast<QAction*>(QObject::sender());
+	QString Tab = Act->objectName();
+	int tabNo = Tab.toInt();
+
+	tabWidget->setCurrentIndex(tabNo);
+	
+	Ui_ListenSession *Sess = (Ui_ListenSession *)tabWidget->currentWidget();
+	int state = Act->isChecked();
+
+	if (state == 0)
+		AutoConnect[tabNo] = 0;
+	else
+	{
+		if (Sess->clientSocket)		// Connected
+			AutoConnect[tabNo] = 1;
+		else
+			AutoConnect[tabNo] = 0;
+	}
+}
+
 
 void QtTermTCP::setFonts()
 {
@@ -1578,13 +1685,16 @@ void QtTermTCP::doQuit()
 void QtTermTCP::onTEselectionChanged()
 {
 	QTextEdit * x = static_cast<QTextEdit*>(QObject::sender());
-	x->copy();
+
+	if (isActiveWindow())
+		x->copy();
 }
 
 void QtTermTCP::onLEselectionChanged()
 {
 	QLineEdit * x = static_cast<QLineEdit*>(QObject::sender());
-	x->copy();
+	if (isActiveWindow())
+		x->copy();
 }
 
 void QtTermTCP::setVDMode()
@@ -1963,6 +2073,8 @@ void QtTermTCP::Connect()
 
 		if (i == _sessions.size())
 			return;
+
+		currentHost[i] = SavedHost;
 	}
 
 	else if (TermMode == Tabbed)
@@ -1977,6 +2089,8 @@ void QtTermTCP::Connect()
 		return;
 
 	Sess->CurrentHost = SavedHost;
+
+	currentHost[Sess->Tab] = SavedHost;
 
 	if (Act == actHost[16])
 	{
@@ -3295,6 +3409,17 @@ void GetSettings()
 		&TabType[0], &TabType[1], &TabType[2], &TabType[3], &TabType[4],
 		&TabType[5], &TabType[6], &TabType[7], &TabType[8], &TabType[9]);
 
+	strcpy(Param, settings->value("AutoConnect", "0, 0 ,0, 0, 0, 0, 0, 0, 0, 0").toString().toUtf8());
+	sscanf(Param, "%d %d %d %d %d %d %d %d %d %d",
+		&AutoConnect[0], &AutoConnect[1], &AutoConnect[2], &AutoConnect[3], &AutoConnect[4],
+		&AutoConnect[5], &AutoConnect[6], &AutoConnect[7], &AutoConnect[8], &AutoConnect[9]);
+
+	strcpy(Param, settings->value("currentHost", "0, 0 ,0, 0, 0, 0, 0, 0, 0, 0").toString().toUtf8());
+	sscanf(Param, "%d %d %d %d %d %d %d %d %d %d",
+		&currentHost[0], &currentHost[1], &currentHost[2], &currentHost[3], &currentHost[4],
+		&currentHost[5], &currentHost[6], &currentHost[7], &currentHost[8], &currentHost[9]);
+
+
 	monBackground = settings->value("monBackground", QColor(255, 255, 255)).value<QColor>();
 	monRxText = settings->value("monRxText", QColor(0, 0, 255)).value<QColor>();
 	monTxText = settings->value("monTxText", QColor(255, 0, 0)).value<QColor>();
@@ -3467,11 +3592,20 @@ extern "C" void SaveSettings()
 	settings->setValue("VARAFM", VARAFM);
 	settings->setValue("VARASAT", VARASAT);
 
-
 	sprintf(Param, "%d %d %d %d %d %d %d %d %d %d",
 		TabType[0], TabType[1], TabType[2], TabType[3], TabType[4], TabType[5], TabType[6], TabType[7], TabType[8], TabType[9]);
 
 	settings->setValue("TabType", Param);
+
+	sprintf(Param, "%d %d %d %d %d %d %d %d %d %d",
+		AutoConnect[0], AutoConnect[1], AutoConnect[2], AutoConnect[3], AutoConnect[4], AutoConnect[5], AutoConnect[6], AutoConnect[7], AutoConnect[8], AutoConnect[9]);
+
+	settings->setValue("AutoConnect", Param);
+
+	sprintf(Param, "%d %d %d %d %d %d %d %d %d %d",
+		currentHost[0], currentHost[1], currentHost[2], currentHost[3], currentHost[4], currentHost[5], currentHost[6], currentHost[7], currentHost[8], currentHost[9]);
+
+	settings->setValue("currentHost", Param);
 
 	settings->setValue("monBackground", monBackground);
 	settings->setValue("monRxText", monRxText);
@@ -4264,9 +4398,9 @@ void QtTermTCP::onSocketStateChanged(QAbstractSocket::SocketState socketState)
 		else if (TermMode == Tabbed)
 		{
 			if (SessName[Sess->CurrentHost][0])
-				tabWidget->setTabText(tabWidget->currentIndex(), SessName[Sess->CurrentHost]);
+				tabWidget->setTabText(Sess->Tab, SessName[Sess->CurrentHost]);
 			else
-				tabWidget->setTabText(tabWidget->currentIndex(), Host[Sess->CurrentHost]);
+				tabWidget->setTabText(Sess->Tab, Host[Sess->CurrentHost]);
 		}
 		else if (TermMode == Single)
 			this->setWindowTitle(Title);
