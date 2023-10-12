@@ -1062,7 +1062,7 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 				setMenus(true);
 
 				if (ConnectBeep)
-					myBeep();
+					myBeep(&ConnectWAV);
 
 				// Send CText if defined
 

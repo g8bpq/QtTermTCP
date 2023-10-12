@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.68"
+#define VersionString "0.0.0.69"
 
 
 // .12 Save font weight
@@ -76,8 +76,17 @@
 // .67 Add config Yapp RX Size dialog			July 2023
 //	   Fix 63 port montoring
 
-// .68 Remember last used host on restart		Sept 2023
-//	   Add AutoConnect in Tabbed Mode
+// .68	Sept 2023
+
+//	Remember last used host on restart	
+//	Add AutoConnect in Tabbed Mode
+//	Fix auto copy when QtTerm not active window
+
+// .69	October 2023
+
+//	Options related to sound alerts moved to a separte menu in Setup
+//	Allow use of WAV files instead of Beep sound for sound alerts
+//	Enable an alarm to be sounded when one of a list of words or phrases is received.
 
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -222,6 +231,17 @@ extern int AlertBeep;
 extern int AlertFreq;
 extern int AlertDuration;
 extern int ConnectBeep;
+
+bool useBeep;			// use wav files if not set
+
+extern int UseKeywords;
+extern QString KeyWordsFile;
+
+QString ConnectWAV("");
+QString AlertWAV("");
+QString BellWAV("");
+QString IntervalWAV("");
+
 extern int MaxRXSize;
 
 extern int AutoTeletext;
@@ -879,6 +899,7 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	Sess->TTActive = 0;
 	Sess->TTFlashToggle = 0;
 	Sess->pageBuffer[0] = 0;
+	Sess->Tab = 0;
 
 	_sessions.push_back(Sess);
 
@@ -1077,6 +1098,8 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	restoreState(mysettings.value("windowState").toByteArray());
 
 	GetSettings();
+
+	GetKeyWordFile();
 
 	// Set background colours
 
@@ -1340,8 +1363,14 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	setupMenu->addAction(singleAct2);
 	setupMenu->addAction(MDIAct);
 	setupMenu->addAction(tabbedAct);
-
 	setupMenu->addSeparator();
+	AlertAction = new QAction("Sound Alerts Setup", this);
+
+	setupMenu->addAction(AlertAction);
+	connect(AlertAction, SIGNAL(triggered()), this, SLOT(AlertSlot()));
+	AlertAction->setFont(*menufont);
+	setupMenu->addSeparator();
+
 
 	actFonts = new QAction("Terminal Font", this);
 	setupMenu->addAction(actFonts);
@@ -1358,6 +1387,8 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	connect(actColours, SIGNAL(triggered()), this, SLOT(doColours()));
 	actColours->setFont(*menufont);
 
+	setupMenu->addSeparator();
+
 	AGWAction = new QAction("AGW Setup", this);
 	setupMenu->addAction(AGWAction);
 	connect(AGWAction, SIGNAL(triggered()), this, SLOT(AGWSlot()));
@@ -1373,13 +1404,13 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	connect(KISSAction, SIGNAL(triggered()), this, SLOT(KISSSlot()));
 	KISSAction->setFont(*menufont);
 
+	setupMenu->addSeparator();
 
 	actChatMode = setupMenuLine(setupMenu, (char *)"Chat Terminal Mode (Send Keepalives)", this, ChatMode);
 	actAutoTeletext = setupMenuLine(setupMenu, (char *)"Auto switch to Teletext", this, AutoTeletext);
-	actBells = setupMenuLine(setupMenu, (char *)"Enable Bells", this, Bells);
 	actStripLF = setupMenuLine(setupMenu, (char *)"Strip Line Feeds", this, StripLF);
-	actIntervalBeep = setupMenuLine(setupMenu, (char *)"Beep after inactivity", this, AlertBeep);
-	actConnectBeep = setupMenuLine(setupMenu, (char *)"Beep on inbound connect", this, ConnectBeep);
+
+	setupMenu->addSeparator();
 
 	setupMenu->addAction(new QAction("Interpret non-UTF8 input as:", this));
 	setupMenu->setFont(*menufont);
@@ -2871,7 +2902,7 @@ extern "C" void WritetoOutputWindowEx(Ui_ListenSession * Sess, unsigned char * B
 	if (AlertInterval && (NOW - LastWrite) > AlertInterval)
 	{
 		if (AlertBeep)
-			myBeep();
+			myBeep(&IntervalWAV);
 	}
 
 	// if tabbed and not active tab set tab label red
@@ -3011,7 +3042,7 @@ lineloop:
 			if (ptr)
 			{
 				*(ptr) = 32;
-				myBeep();
+				myBeep(&BellWAV);
 			}
 		} while (ptr);
 	}
@@ -3321,8 +3352,18 @@ void GetSettings()
 	AutoTeletext = settings->value("AutoTeletext", 0).toInt();
 	Bells = settings->value("Bells", 1).toInt();
 	StripLF = settings->value("StripLF", 1).toInt();
+	useBeep = settings->value("useBeep", true).toBool();
 	AlertBeep = settings->value("AlertBeep", 1).toInt();
+	AlertInterval = settings->value("AlertInterval", 300).toInt();
 	ConnectBeep = settings->value("ConnectBeep", 1).toInt();
+	ConnectWAV = settings->value("ConnectWAV", "").toString().toUtf8();
+	AlertWAV = settings->value("AlertWAV", "").toString().toUtf8();
+	BellWAV = settings->value("BellWAV", "").toString().toUtf8();
+	IntervalWAV = settings->value("IntervalWAV", "").toString().toUtf8();
+
+	UseKeywords = settings->value("UseKeywords", 0).toInt();
+	KeyWordsFile = settings->value("KeyWordsFile", "keywords.sys").toString().toUtf8();
+
 	SavedHost = settings->value("CurrentHost", 0).toInt();
 	strcpy(YAPPPath, settings->value("YAPPPath", "").toString().toUtf8());
 	MaxRXSize = settings->value("MaxRXSize", 100000).toInt();
@@ -3495,7 +3536,17 @@ extern "C" void SaveSettings()
 	settings->setValue("Bells", Bells);
 	settings->setValue("StripLF", StripLF);
 	settings->setValue("AlertBeep", AlertBeep);
+	settings->setValue("useBeep", useBeep);
 	settings->setValue("ConnectBeep", ConnectBeep);
+	settings->setValue("BellWAV", BellWAV);
+	settings->setValue("AlertWAV", AlertWAV);
+	settings->setValue("IntervalWAV", IntervalWAV);
+	settings->setValue("ConnectWAV", ConnectWAV);
+
+	settings->setValue("UseKeywords", UseKeywords);
+	settings->setValue("KeyWordsFile", KeyWordsFile);
+
+	settings->setValue("AlertInterval", AlertInterval);
 	settings->setValue("CurrentHost", SavedHost);
 
 	settings->setValue("YAPPPath", YAPPPath);
@@ -3748,9 +3799,17 @@ void QtTermTCP::MyTimerSlot()
 
 }
 
-extern "C" void myBeep()
+extern "C" void myBeep(QString * WAV)
 {
-	QApplication::beep();
+	if (useBeep)
+	{
+		QApplication::beep();
+		return;
+	}
+
+	// Using .wav files
+
+	QSound::play(*WAV);
 }
 
 void QtTermTCP::ListenSlot()
@@ -3770,6 +3829,7 @@ void QtTermTCP::AGWSlot()
 }
 
 Ui_Dialog * Dev;
+Ui_AlertDialog * Alert;
 
 static Ui_KISSDialog * KISS;
 static Ui_ColourDialog * COLOURS;
@@ -3923,6 +3983,113 @@ void QtTermTCP::KISSreject()
 }
 
 
+void QtTermTCP::AlertSlot()
+{
+	// This runs the VARA Configuration dialog
+
+	Alert = new(Ui_AlertDialog);
+
+	QDialog UI;
+
+	Alert->setupUi(&UI);
+
+	UI.setFont(*menufont);
+
+	deviceUI = &UI;
+
+	Alert->Bells->setChecked(Bells);
+	Alert->InboundBeep->setChecked(ConnectBeep);
+	Alert->InactivityBeep->setChecked(AlertBeep);
+	Alert->Interval->setText(QString::number(AlertInterval));
+	Alert->KeywordBeep->setChecked(UseKeywords);
+	Alert->keywordFile->setText(KeyWordsFile);
+
+	Alert->useBeep->setChecked(useBeep);
+	Alert->useFiles->setChecked(!useBeep);
+
+	Alert->connectFile->setText(ConnectWAV);
+	Alert->bellsFile->setText(BellWAV);
+	Alert->intervalFile->setText(IntervalWAV);
+	Alert->keywordWAV->setText(AlertWAV);
+
+	QObject::connect(Alert->chooseInbound, SIGNAL(clicked()), this, SLOT(chooseInboundWAV()));
+	QObject::connect(Alert->chooseBells, SIGNAL(clicked()), this, SLOT(chooseBellsWAV()));
+	QObject::connect(Alert->chooseInterval, SIGNAL(clicked()), this, SLOT(chooseIntervalWAV()));
+	QObject::connect(Alert->chooseKeyAlert, SIGNAL(clicked()), this, SLOT(chooseAlertWAV()));
+
+	QObject::connect(Alert->okButton, SIGNAL(clicked()), this, SLOT(alertAccept()));
+	QObject::connect(Alert->cancelButton, SIGNAL(clicked()), this, SLOT(alertReject()));
+
+	UI.exec();
+}
+
+
+
+
+
+
+void QtTermTCP::chooseInboundWAV()
+{
+	ConnectWAV = QFileDialog::getOpenFileName(this,
+		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
+
+	Alert->connectFile->setText(ConnectWAV);
+
+}
+
+void QtTermTCP::chooseBellsWAV()
+{
+	BellWAV = QFileDialog::getOpenFileName(this,
+		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
+
+	Alert->bellsFile->setText(BellWAV);
+}
+
+void QtTermTCP::chooseIntervalWAV()
+{
+	IntervalWAV = QFileDialog::getOpenFileName(this,
+		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
+
+	Alert->intervalFile->setText(IntervalWAV);
+}
+
+void QtTermTCP::chooseAlertWAV()
+{
+	AlertWAV = QFileDialog::getOpenFileName(this,
+		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
+
+	Alert->keywordWAV->setText(AlertWAV);
+}
+
+void QtTermTCP::alertAccept()
+{
+	QVariant Q;
+
+	useBeep = Alert->useBeep->isChecked();
+
+	Bells = Alert->Bells->isChecked();
+	ConnectBeep = Alert->InboundBeep->isChecked();
+	AlertBeep = Alert->InactivityBeep->isChecked();
+	AlertInterval = Alert->Interval->text().toInt();
+
+	UseKeywords = Alert->KeywordBeep->isChecked();
+	KeyWordsFile = Alert->keywordFile->text();
+
+	ConnectWAV = Alert->connectFile->text();
+	BellWAV = Alert->bellsFile->text();
+	IntervalWAV = Alert->intervalFile->text();
+	AlertWAV = Alert->keywordWAV->text();
+
+	delete(Alert);
+	SaveSettings();
+	deviceUI->accept();
+}
+
+void QtTermTCP::alertReject()
+{
+	delete(Alert);
+	deviceUI->reject();
+}
 
 
 
@@ -4289,7 +4456,7 @@ void QtTermTCP::onNewConnection()
 	WritetoOutputWindow(Sess, (unsigned char *)Msg, (int)strlen(Msg));
 
 	if (ConnectBeep)
-		myBeep();
+		myBeep(&ConnectWAV);
 }
 
 void QtTermTCP::onSocketStateChanged(QAbstractSocket::SocketState socketState)
@@ -6419,7 +6586,7 @@ extern "C" Ui_ListenSession * ax25IncommingConnect(TAX25Port * AX25Sess)
 		setMenus(true);
 
 		if (ConnectBeep)
-			myBeep();
+			myBeep(&ConnectWAV);
 
 		// Send CText if defined
 
@@ -7198,33 +7365,36 @@ void DecodeTeleText(Ui_ListenSession * Sess, char * page)
 						// Just write char at current col and line
 
 					isText:
-						char s[5] = " ";
+						char s[5];
+						unsigned char su[5] = "";
 
 						// Some chars are in wrong char set
 
-						s[0] = ch;
+						su[0] = ch;
 
 						if (ch == '_')
-							s[0] = '#';
+							su[0] = '#';
 
 						else if (ch == 0x7e)					// division
 						{
-							s[0] = 0xC3;
-							s[1] = 0xB7;
+							su[0] = 0xC3;
+							su[1] = 0xB7;
 						}
 						else if (ch == 0x5e)			// up arrow
 						{
-							s[0] = 0xF0;
-							s[1] = 0x9F;
-							s[2] = 0xA0;
-							s[3] = 0x95;
+							su[0] = 0xF0;
+							su[1] = 0x9F;
+							su[2] = 0xA0;
+							su[3] = 0x95;
 						}
 						else if (ch == 0x7f)			// up arrow
 						{
-							s[0] = 0xE2;
-							s[1] = 0x96;
-							s[2] = 0x88;
+							su[0] = 0xE2;
+							su[1] = 0x96;
+							su[2] = 0x88;
 						}
+
+						memcpy(s, su, 5);
 
 //						if (doubleHeight)
 	//							p.drawText(col * 15, line * 19 + 25, s);

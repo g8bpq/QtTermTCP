@@ -83,7 +83,7 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="TabDialog.h">
-      <Filter>Header Files</Filter>
+      <Filter>Generated Files</Filter>
     </QtMoc>
   </ItemGroup>
   <ItemGroup>
@@ -95,16 +95,7 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <QtUic Include="AGWConnect.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
     <QtUic Include="AGWParams.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
-    <QtUic Include="KISSConfig.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
-    <QtUic Include="ListenPort.ui">
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="QtTermTCP.ui">
@@ -117,6 +108,18 @@
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="YAPPRxSize.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="AGWConnect.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ListenPort.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="KISSConfig.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="AlertSetup.ui">
       <Filter>Form Files</Filter>
     </QtUic>
   </ItemGroup>

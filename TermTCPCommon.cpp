@@ -56,10 +56,10 @@ TCHAR AlertFileName[256] = { 0 };
 int ConnectBeep = TRUE;
 int UseKeywords = TRUE;
 
-char KeyWordsName[MAX_PATH] = "Keywords.sys";
+QString KeyWordsFile = "Keywords.sys";
+
 char ** KeyWords = NULL;
 int NumberofKeyWords = 0;
-
 
 
 // YAPP stuff
@@ -112,6 +112,97 @@ char * strlop(char * buf, char delim)
 	return ptr;
 }
 
+#ifdef WIN32
+
+char * strcasestr(char *ch1, char *ch2)
+{
+	char	*chN1, *chN2;
+	char	*chNdx;
+	char	*chRet = NULL;
+
+	chN1 = _strdup(ch1);
+	chN2 = _strdup(ch2);
+
+	if (chN1 && chN2)
+	{
+		chNdx = chN1;
+		while (*chNdx)
+		{
+			*chNdx = (char)tolower(*chNdx);
+			chNdx++;
+		}
+		chNdx = chN2;
+
+		while (*chNdx)
+		{
+			*chNdx = (char)tolower(*chNdx);
+			chNdx++;
+		}
+
+		chNdx = strstr(chN1, chN2);
+
+		if (chNdx)
+			chRet = ch1 + (chNdx - chN1);
+	}
+
+	free(chN1);
+	free(chN2);
+	return chRet;
+}
+
+#endif
+
+void GetKeyWordFile()
+{
+	DWORD FileSize;
+	char * ptr1, *ptr2;
+	char * KeyWordFile;
+
+	QFile file(KeyWordsFile);
+	
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		if (UseKeywords)				// Don't need to alert if not being used
+		{
+			QMessageBox msgBox;
+			msgBox.setText("Keyword File " + KeyWordsFile + " not found");
+			msgBox.exec();
+		}
+		return;
+	}
+
+	FileSize = file.size();
+
+	KeyWordFile = (char *)malloc(FileSize + 1);
+
+	file.read(KeyWordFile, FileSize);
+
+	file.close();
+
+	KeyWordFile[FileSize] = 0;
+ 
+	ptr1 = KeyWordFile;
+
+	while (ptr1)
+	{
+		if (*ptr1 == '\n') ptr1++;
+
+		ptr2 = strtok_s(NULL, "\r\n", &ptr1);
+		if (ptr2)
+		{
+			if (*ptr2 != '#')
+			{
+				KeyWords = (char **)realloc(KeyWords, (++NumberofKeyWords + 1) * 4);
+				KeyWords[NumberofKeyWords] = ptr2;
+			}
+		}
+		else
+			break;
+	}
+}
+
+
+
 int CheckKeyWord(char * Word, char * Msg)
 {
 	char * ptr1 = Msg, *ptr2;
@@ -119,7 +210,7 @@ int CheckKeyWord(char * Word, char * Msg)
 
 	while (*ptr1)					// Stop at end
 	{
-		ptr2 = strstr(ptr1, Word);
+		ptr2 = strcasestr(ptr1, Word);
 
 		if (ptr2 == NULL)
 			return FALSE;				// OK
@@ -140,21 +231,16 @@ int CheckKeyWord(char * Word, char * Msg)
 
 int CheckKeyWords(UCHAR * Msg, int len)
 {
-	char dupMsg[2048];
 	int i;
 
 	if (UseKeywords == 0 || NumberofKeyWords == 0)
 		return FALSE;
 
-	memcpy(dupMsg, Msg, len);
-	dupMsg[len] = 0;
-	//_strlwr(dupMsg);
-
 	for (i = 1; i <= NumberofKeyWords; i++)
 	{
-		if (CheckKeyWord(KeyWords[i], dupMsg))
+		if (CheckKeyWord(KeyWords[i], (char *)Msg))
 		{
-//			Beep(660, 250);
+			myBeep(&AlertWAV);
 			return TRUE;			// Alert
 		}
 	}

@@ -1,10 +1,10 @@
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.cpp ./
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.c ./
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.h ./
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.ui ./
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.pro ./
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.qrc ./
-cp --preserve  /mnt/Source/QT/QtTermTCP/*.ico ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.cpp ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.c ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.h ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.ui ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.pro ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.qrc ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.ico ./
 qmake
 
 make -j4

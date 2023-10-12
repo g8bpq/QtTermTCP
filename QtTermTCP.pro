@@ -3,6 +3,7 @@ QT += core gui
 QT += network
 QT += widgets
 QT += serialport
+QT += multimedia
 
 
 TARGET = QtTermTCP
@@ -41,7 +42,8 @@ FORMS    += QtTermTCP.ui\
         KISSConfig.ui \
 		ColourConfig.ui \
 		YAPPRxSize.ui \
-        AGWConnect.ui
+        AGWConnect.ui \
+		AlertSetup.ui
 
 RESOURCES += QtTermTCP.qrc
 

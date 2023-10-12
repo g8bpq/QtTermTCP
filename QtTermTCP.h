@@ -2,7 +2,7 @@
 
 #include <QMainWindow>
 #include "ui_QtTermTCP.h"
-//#include "ui_AGWParams.h"
+#include "ui_AlertSetup.h"
 #include "ui_YAPPRxSize.h"
 #include "ui_ColourConfig.h"
 #include "ui_VARAConfig.h"
@@ -28,6 +28,7 @@
 #include <QMenuBar>
 #include <QProcess>
 #include <QtSerialPort/QSerialPort>
+#include <QtMultimedia/QSound>
 
 #define MAXHOSTS 16
 #define MAXPORTS 64
@@ -152,6 +153,13 @@ private slots:
 	void KISSTimerSlot();
 	void ListenSlot();
 	void AGWSlot();
+	void AlertSlot();
+	void chooseInboundWAV();
+	void chooseBellsWAV();
+	void chooseIntervalWAV();
+	void chooseAlertWAV();
+	void alertAccept();
+	void alertReject();
 	void VARASlot();
 	void KISSSlot();
 	void deviceaccept();
@@ -248,6 +256,7 @@ private:
 	QAction *AGWAction;
 	QAction *VARAAction;
 	QAction *KISSAction;
+	QAction *AlertAction;
 	QAction *quitAction;
 
 	QList<myTcpSocket*>  _sockets;
@@ -269,15 +278,19 @@ extern "C"
 	void setTraceOff(Ui_ListenSession * Sess);
 	void SetPortMonLine(int i, char * Text, int visible, int enabled);
 	void SaveSettings();
-	void myBeep();
+	void myBeep(QString * WAV);
 	void YAPPSendFile(Ui_ListenSession *  Sess, char * FN);
 	int SocketSend(Ui_ListenSession * Sess, char * Buffer, int len);
 	void SendTraceOptions(Ui_ListenSession * Sess);
 	int SocketFlush(Ui_ListenSession * Sess);
 	extern void mySleep(int ms);
 	extern void setTraceOff(Ui_ListenSession * Sess);
+	void GetKeyWordFile();
 }
 
+extern QString ConnectWAV;
+extern QString BellWAV;
+extern QString AlertWAV;
 
 char * strlop(char * buf, char delim);
 extern "C" void setMenus(int State);
