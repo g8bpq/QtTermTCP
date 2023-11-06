@@ -29,6 +29,8 @@ extern QWidget * mythis;
 
 extern int AGWEnable;
 extern int AGWMonEnable;
+extern int AGWLocalTime;
+extern int AGWMonNodes;
 extern char AGWTermCall[12];
 extern char AGWBeaconDest[12];
 extern char AGWBeaconPath[80];
@@ -39,6 +41,8 @@ extern char AGWBeaconMsg[260];
 extern char AGWHost[128];
 extern int AGWPortNum;
 extern int AGWPaclen;
+
+extern Ui_ListenSession * KISSMonSess;
 
 extern char listenCText[4096];
 extern int ConnectBeep;
@@ -137,6 +141,7 @@ void AGW_Process_Input(AGWUser * AGW);
 void Send_AGW_X_Frame(QTcpSocket* socket, char * CallFrom);
 void Send_AGW_G_Frame(QTcpSocket* socket); 
 void Send_AGW_m_Frame(QTcpSocket* socket);
+void Send_AGW_R_Frame(QTcpSocket* socket);
 
 Ui_ListenSession * FindFreeWindow();
 Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label = nullptr);
@@ -146,7 +151,7 @@ void AGW_frame_header(UCHAR * Msg, char AGWPort, char DataKind, unsigned char PI
 void Debugprintf(const char * format, ...)
 {
 	char Mess[10000];
-	va_list(arglist);
+	va_list arglist;
 
 	va_start(arglist, format);
 	vsprintf(Mess, format, arglist);
@@ -448,7 +453,7 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 							tabWidget->setTabText(Sess->Tab, "Monitor");
 						else
 						{
-							char Label[16];
+							char Label[32];
 							sprintf(Label, "Sess %d", Sess->Tab + 1);
 							tabWidget->setTabText(Sess->Tab, Label);
 						}
@@ -541,7 +546,7 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 
 				//	for (Ui_ListenSession * S: _sessions)
 				//	{
-				if ((S->SessionType == Mon) && S->clientSocket == NULL && S->AGWSession == NULL && S->KISSSession == NULL)
+				if ((S->SessionType == Mon) && S->clientSocket == NULL && S->AGWSession == NULL && S->KISSSession == NULL && (AGWUsers == NULL || (S != AGWUsers->MonSess)) && S != KISSMonSess)
 				{
 					Sess = S;
 					break;
@@ -563,7 +568,7 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 			{
 				S = _sessions.at(i);
 
-				if (S->clientSocket == NULL && S->AGWSession == NULL)
+				if (S->clientSocket == NULL && S->KISSSession == NULL && S->AGWSession == NULL && (AGWUsers == NULL || (S != AGWUsers->MonSess)) && S != KISSMonSess)
 				{
 					Sess = S;
 					break;
@@ -574,7 +579,7 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 		{
 			S = _sessions.at(0);
 
-			if (S->clientSocket == NULL && S->AGWSession == NULL && S->KISSSession == NULL)
+			if (S->clientSocket == NULL && S->AGWSession == NULL && S->KISSSession == NULL && (AGWUsers == NULL || (S != AGWUsers->MonSess)) && S != KISSMonSess)
 				Sess = S;
 
 		}
@@ -606,6 +611,10 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 				connectMenu->setEnabled(false);
 			}
 
+			Sess->mlocaltime = AGWLocalTime;
+			Sess->MonitorNODES = AGWMonNodes;
+
+			Send_AGW_R_Frame(sender);			// Request Version
 			Send_AGW_m_Frame(sender);			// Request Monitor Frames
 		}
 	}
@@ -735,9 +744,30 @@ void Send_AGW_m_Frame(QTcpSocket* socket)
 {
 	UCHAR Msg[512];
 
-	AGW_frame_header(Msg, 0, 'm', 0, "", "", 0);
+	// Request Monitoring. Add Extended form if connected to BPQ
+
+	AGW_frame_header(Msg, 0, 'm', 0, "", "", 12);
+
+	Msg[AGWHDDRRLEN] = AGWLocalTime;
+	Msg[AGWHDDRRLEN + 1] = AGWMonNodes;
+	Msg[AGWHDDRRLEN + 2] = AGWMonEnable;
+	Msg[AGWHDDRRLEN + 3] = 0;
+
+	memcpy(&Msg[AGWHDDRRLEN + 4], (void *)&AGWUsers->MonSess->portmask, 8);
+
+	socket->write((char *)Msg, AGWHDDRRLEN + 12);
+}
+
+void Send_AGW_R_Frame(QTcpSocket* socket)
+{
+	UCHAR Msg[512];
+
+	// Request Version
+
+	AGW_frame_header(Msg, 0, 'R', 0, "", "", 0);
 	socket->write((char *)Msg, AGWHDDRRLEN);
 }
+
 
 /*
 
@@ -1034,6 +1064,8 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 			{
 				sprintf(Title, "Connected to %s", CallFrom);
 
+				QApplication::alert(mythis, 0);
+
 				if (TermMode == MDI)
 				{
 					Sess->setWindowTitle(Title);
@@ -1073,7 +1105,7 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 
 				char Msg[80];
 
-				sprintf(Msg, "Incoming Connect from %s\r\r", CallFrom);
+				sprintf(Msg, "Incoming AGW Connection from %s\r\r", CallFrom);
 
 				WritetoOutputWindow(Sess, (unsigned char *)Msg, (int)strlen(Msg));
 				return;
@@ -1121,19 +1153,25 @@ void on_AGW_D_frame(int snd_ch, char * CallFrom, char * CallTo, byte * Msg, int 
 	}
 }
 
+extern "C" void WritetoMonWindow(Ui_ListenSession * Sess, unsigned char * Msg, int len);
 
 void on_AGW_Mon_frame(byte * Msg, int Len, char Type)
 {
 	if (AGWUsers && AGWUsers->MonSess && AGWUsers->MonSess->monWindow)
 	{
-		if (Type == 'T')
-			WritetoOutputWindowEx(AGWUsers->MonSess, Msg, Len,
-				AGWUsers->MonSess->monWindow, &AGWUsers->MonSess->OutputSaveLen, AGWUsers->MonSess->OutputSave, monTxText);		// Red
+		unsigned char copy[512];
+
+		copy[0] = 0x1b;
+		if	(Type == 'T')
+			copy[1] = 91;
 		else
-			WritetoOutputWindowEx(AGWUsers->MonSess, Msg, Len,
-				AGWUsers->MonSess->monWindow, &AGWUsers->MonSess->OutputSaveLen, AGWUsers->MonSess->OutputSave, monRxText);		// Blue
+			copy[1] = 17;
+
+		memcpy(&copy[2], Msg, Len);
+		WritetoMonWindow(AGWUsers->MonSess, copy, Len + 2);
 	}
 }
+
 
 
 void on_AGW_Ds_frame(int AGWChan, char * CallFrom, char * CallTo, struct AGWHeader * Frame)
@@ -1170,7 +1208,7 @@ void on_AGW_Ds_frame(int AGWChan, char * CallFrom, char * CallTo, struct AGWHead
 				tabWidget->setTabText(Sess->Tab, "Monitor");
 			else
 			{
-				char Label[16];
+				char Label[32];
 				sprintf(Label, "Sess %d", Sess->Tab + 1);
 				tabWidget->setTabText(Sess->Tab, Label);
 			}

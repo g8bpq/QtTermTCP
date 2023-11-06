@@ -1,5 +1,10 @@
-<RCC>
-    <qresource prefix="/QtTermTCP">
-        <file>QtTermTCP.ico</file>
-    </qresource>
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+    <file alias="LowTone">250x600Hz.wav</file>
+    <file alias="HighTone">250x1000Hz.wav</file>
+    <file alias="Ding">ding.wav</file>
+    <file alias="PCBeep">PCBeep.wav</file>
+    <file alias="Ring">Ring.wav</file>
+	<file>QtTermTCP.ico</file>
+</qresource>
 </RCC>

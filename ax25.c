@@ -312,7 +312,7 @@ void AX25_conn(TAX25Port * AX25Sess, int snd_ch, Byte mode)
 	{
 	case MODE_OTHER:
 
-		Len = sprintf(Msg, "Incomming Connection from  %s\r", AX25Sess->corrcall);
+		Len = sprintf(Msg, "Incoming KISS Connection from %s\r", AX25Sess->corrcall);
 		break;
 
 	case MODE_OUR:
@@ -1405,7 +1405,7 @@ end;
 
 boolean is_last_digi(Byte *path)
 {
-	int len = strlen(path);
+	int len = strlen((char *)path);
 
 	if (len == 14)
 		return TRUE;
@@ -1469,7 +1469,7 @@ boolean is_correct_path(Byte * path, Byte pid)
 	int i;
 
 
-	if (pid == 0 || strchr(networks, pid))
+	if (pid == 0 || strchr((char *)networks, pid))
 	{
 		// Validate calls
 
@@ -1678,7 +1678,7 @@ int number_digi(unsigned char * path)
 
 void get_monitor_path(Byte * path, char * mycall, char * corrcall, char * digi)
 {
-	Byte * digiptr = digi;
+	char * digiptr = digi;
 
 	digi[0] = 0;
 
@@ -2744,17 +2744,23 @@ TAX25Port * KISSConnectOut(void * Sess, char * CallFrom, char * CallTo, char * D
 
 char ShortDT[] = "HH:MM:SS";
 
+int KISSLocalTime = 0;
+int KISSMonEnable = 0;
+int KISSMonNodes = 0;
+
 char * ShortDateTime()
 {
 	struct tm * tm;
 	time_t NOW = time(NULL);
 
-	tm = gmtime(&NOW);
+	if (KISSLocalTime)
+		tm = localtime(&NOW);
+	else
+		tm = gmtime(&NOW);
 
 	sprintf(ShortDT, "%02d:%02d:%02d", tm->tm_hour, tm->tm_min, tm->tm_sec);
 	return ShortDT;
 }
-
 
 
 char FrameData[1024] = "";
@@ -2769,8 +2775,7 @@ char * frame_monitor(string * frame, char * code, int tx_stat)
 	Byte _data[512] = "";
 	Byte * p_data = _data;
 	int _datalen;
-;
-	char  CallFrom[10], CallTo[10], Digi[80];
+	char CallFrom[10], CallTo[10], Digi[80];
 
 	char TR = 'R';
 	char codestr[16] = "";
@@ -2795,17 +2800,31 @@ char * frame_monitor(string * frame, char * code, int tx_stat)
 
 	if (tx_stat)	// TX frame has control byte
 
-		decode_frame(frame->Data +1 , frame->Length - 1, path, data, &pid, &nr, &ns, &f_type, &f_id, &rpt, &pf, &cr);
+		decode_frame(frame->Data + 1, frame->Length - 1, path, data, &pid, &nr, &ns, &f_type, &f_id, &rpt, &pf, &cr);
 	else
 		decode_frame(frame->Data, frame->Length, path, data, &pid, &nr, &ns, &f_type, &f_id, &rpt, &pf, &cr);
+
 
 	datap = data->Data;
 
 	len = data->Length;
 
-	//	if (pid == 0xCF)
+	if (pid == 0xCF) 
+	{
+		if (datap[0] == 255)	 //Nodes broadcast
+		{
+			if (KISSMonNodes == 0)
+			{
+				freeString(data);
+				return 0;
+			}
+		}
+	}
+	
+		
+		
 	//		data = parse_NETROM(data, f_id);
-		// IP parsing
+	// IP parsing
 	//	else if (pid == 0xCC)
 	//		data = parse_IP(data);
 		// ARP parsing

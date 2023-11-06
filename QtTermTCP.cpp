@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.69"
+#define VersionString "0.0.0.71"
 
 
 // .12 Save font weight
@@ -88,6 +88,16 @@
 //	Allow use of WAV files instead of Beep sound for sound alerts
 //	Enable an alarm to be sounded when one of a list of words or phrases is received.
 
+//	.70 October 2023
+
+//	Include some .wav files in resources
+//	Add Test button to Alert setup dialog
+
+//	.71 October 2023
+
+//	Add option to use local time
+//	Fixes for Mac OS
+
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -154,7 +164,6 @@ int singlemodeFormat = Mon + Term;
 char monStyleSheet[128] = "background-color: rgb(0,255,255)";
 char termStyleSheet[128] = "background-color: rgb(255,0,255);";
 char inputStyleSheet[128] = "color: rgb(255, 0, 0); background-color: rgb(255,255,0);";
-
 
 QColor monBackground = qRgb(0, 255, 255);
 QColor monRxText = qRgb(0, 0, 255);
@@ -250,6 +259,8 @@ extern int AutoTeletext;
 
 int AGWEnable = 0;
 int AGWMonEnable = 0;
+int AGWLocalTime = 0;
+int AGWMonNodes = 0;
 char AGWTermCall[12] = "";
 char AGWBeaconDest[12] = "";
 char AGWBeaconPath[80] = "";
@@ -257,17 +268,39 @@ int AGWBeaconInterval = 0;
 char AGWBeaconPorts[80];
 char AGWBeaconMsg[260] = "";
 
+
 char AGWHost[128] = "127.0.0.1";
 int AGWPortNum = 8000;
 int AGWPaclen = 80;
 extern char * AGWPortList;
 extern myTcpSocket * AGWSock;
 
+typedef struct AGWUser_t
+{
+	QTcpSocket *socket;
+	unsigned char data_in[8192];
+	int data_in_len;
+	unsigned char  AGW_frame_buf[512];
+	int	Monitor;
+	int	Monitor_raw;
+	Ui_ListenSession * MonSess;			// Window for Monitor info
+
+} AGWUser;
+
+extern AGWUser *AGWUsers;				// List of currently connected clients
+void Send_AGW_m_Frame(QTcpSocket* socket);
+
+
 QStringList AGWToCalls;
 
 // KISS Interface
 
 int KISSEnable = 0;
+extern "C" int KISSMonEnable;
+extern "C" int KISSLocalTime;
+extern "C" int KISSMonNodes;
+extern "C" int KISSListen;
+
 char SerialPort[80] = "";
 char KISSHost[128] = "127.0.0.1";
 int KISSPortNum = 1000;
@@ -284,7 +317,7 @@ extern "C" void * KISSSockCopy[4];
 int KISSConnected = 0;
 int KISSConnecting = 0;
 
-Ui_ListenSession * KISSMonSess;
+Ui_ListenSession * KISSMonSess = nullptr;
 
 QSerialPort * m_serial = nullptr;
 
@@ -401,6 +434,9 @@ QMenu * YAPPMenu;
 QMenu *connectMenu;
 QMenu *disconnectMenu;
 
+QAction *EnableMonitor;
+QAction *EnableMonLog;
+QAction *MonLocalTime;
 QAction *MonTX;
 QAction *MonSup;
 QAction *MonNodes;
@@ -860,6 +896,7 @@ QAction * setupMenuLine(QMenu * Menu, char * Label, QObject * parent, int State)
 // This now creates all window types - Term, Mon, Combined, Listen
 
 int xCount = 0;
+int sessNo = 0;
 
 Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 {
@@ -884,6 +921,7 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	Sess->portmask = 0;
 	Sess->portmask = 1;
 	Sess->mtxparam = 1;
+	Sess->mlocaltime = 0;
 	Sess->mcomparam = 1;
 	Sess->monUI = 0;
 	Sess->MonitorNODES = 0;
@@ -901,7 +939,12 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	Sess->pageBuffer[0] = 0;
 	Sess->Tab = 0;
 
-	_sessions.push_back(Sess);
+	Sess->LogMonitor = false;
+	Sess->monSpan = (char *) "<span style=white-space:pre>";
+	Sess->monLogfile = nullptr;
+	Sess->sessNo = sessNo++;
+
+	_sessions.append(Sess);
 
 //	Sess->TT = new Ui_TeleTextDialog();
 
@@ -1065,6 +1108,8 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	return Sess;
 }
 
+QByteArray timeLoaded = QDateTime::currentDateTime().toString("yymmdd_hhmmss").toUtf8();
+
 QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 {
 	int i;
@@ -1143,13 +1188,20 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 		int index = 0;
 	
 		tabWidget = new QTabWidget(this);
+		QTabBar* tabBar = tabWidget->tabBar();
+
+//		QString style1 = "QTabWidget::tab-bar{left:0;}";  //  for Mac
+//		tabWidget->setStyleSheet(style1);
+
+		QString style = "QTabBar::tab:selected{background-color: #d0d0d0;} QTabBar::tab:!selected{background-color: #f0f0f0;}";
+
+		tabBar->setStyleSheet(style);
 
 		tabWidget->setContextMenuPolicy(Qt::CustomContextMenu);
 
 		connect(tabWidget, SIGNAL(customContextMenuRequested(const QPoint &)), SLOT(showContextMenu(const QPoint &)));
 
 		ui.verticalLayout->addWidget(tabWidget);
-
 		tabWidget->setTabPosition(QTabWidget::South);
 
 		Sess = newWindow(this, TabType[0], "Sess 1");
@@ -1283,7 +1335,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	discAction = mymenuBar->addAction("&Disconnect");
 
-	// Place discAction in mac preferences menu, otherwise it doesn't appear
+	// Place discAction in mac app menu, otherwise it doesn't appear
 	if (is_mac == true) {
 		QMenu * app_menu = mymenuBar->addMenu("App Menu");
 		discAction->setMenuRole(QAction::ApplicationSpecificRole);
@@ -1371,7 +1423,6 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	AlertAction->setFont(*menufont);
 	setupMenu->addSeparator();
 
-
 	actFonts = new QAction("Terminal Font", this);
 	setupMenu->addAction(actFonts);
 	connect(actFonts, SIGNAL(triggered()), this, SLOT(doFonts()));
@@ -1437,6 +1488,9 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 
 	monitorMenu = mymenuBar->addMenu(tr("&Monitor"));
 
+	EnableMonitor = setupMenuLine(monitorMenu, (char *)"Enable Monitoring", this, 0);
+	EnableMonLog = setupMenuLine(monitorMenu, (char *)"Log to File", this, 0);
+	MonLocalTime = setupMenuLine(monitorMenu, (char *)"Use local time", this, 0);
 	MonTX = setupMenuLine(monitorMenu, (char *)"Monitor TX", this, 1);
 	MonSup = setupMenuLine(monitorMenu, (char *)"Monitor Supervisory", this, 1);
 	MonUI = setupMenuLine(monitorMenu, (char *)"Only Monitor UI Frames", this, 0);
@@ -1464,6 +1518,15 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	ListenAction = mymenuBar->addAction("&Listen");
 	connect(ListenAction, SIGNAL(triggered()), this, SLOT(ListenSlot()));
 
+
+	// Place Listen Action in mac app menu, otherwise it doesn't appear
+	if (is_mac == true)
+	{
+		QMenu * app_menu = mymenuBar->addMenu("App Menu");
+		ListenAction->setMenuRole(QAction::ApplicationSpecificRole);
+		app_menu->addAction(ListenAction);
+	}
+
 	toolBar->addAction(ListenAction);
 
 	YAPPMenu = mymenuBar->addMenu(tr("&YAPP"));
@@ -1483,7 +1546,6 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	connect(YAPPSend, SIGNAL(triggered()), this, SLOT(doYAPPSend()));
 	connect(YAPPSetRX, SIGNAL(triggered()), this, SLOT(doYAPPSetRX()));
 	connect(YAPPSetSize, SIGNAL(triggered()), this, SLOT(doYAPPSetSize()));
-
 
 	but3 = new QToolButton();
 	but3->setPopupMode(QToolButton::InstantPopup);
@@ -1620,11 +1682,17 @@ void QtTermTCP::showContextMenu(const QPoint &point)
 	QRect Brect = tabBar->rect();
 	QPoint myPoint = point;
 
-	int n = myPoint.y() - (Wrect.height() - Brect.height());
-	
-	myPoint.setY(n); 
+	// Get x coordinate of first tab (on Mac tabs are centre aligned)
 
-//	QPoint tabBarPoint = mapTo(tabBar, point);
+	QRect rect = tabWidget->tabBar()->geometry();
+	int left = rect.left();
+
+
+	int n = myPoint.y() - (Wrect.height() - Brect.height());
+	myPoint.setY(n); 
+	n = myPoint.x() - left;
+
+	myPoint.setX(n);
 
 	int tabIndex =  tabBar->tabAt(myPoint);
 
@@ -1644,7 +1712,7 @@ void QtTermTCP::showContextMenu(const QPoint &point)
 
 	connect(Act, SIGNAL(triggered()), this, SLOT(autoConnectChecked()));
 
-	QAction * selected_action = menu.exec(tabWidget->mapToGlobal(point));
+	menu.exec(tabWidget->mapToGlobal(point));
 
 }
 
@@ -1709,6 +1777,13 @@ void QtTermTCP::doQuit()
 
 	QCoreApplication::quit();
 }
+
+void FlashifNotActive()
+{
+	if (!mythis->isActiveWindow())
+		QApplication::alert(mythis, 0);
+}
+
 
 // "Copy on select" Code
 
@@ -2003,6 +2078,47 @@ void QtTermTCP::tabSelected(int Current)
 
 		// If a monitor Window, change Monitor config settings
 
+		EnableMonLog->setChecked(Sess->LogMonitor);
+
+		if (AGWUsers && Sess == AGWUsers->MonSess)		// AGW Monitor
+		{
+			for (int i = 0; i < 64; i++)
+				SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
+
+			MonTX->setVisible(0);
+			MonSup->setVisible(0);
+			MonUI->setVisible(0);
+			MonColour->setVisible(0);
+
+			EnableMonitor->setVisible(1);
+			EnableMonitor->setChecked(AGWMonEnable);
+			MonLocalTime->setChecked(Sess->mlocaltime);
+			MonNodes->setChecked(Sess->MonitorNODES);
+		}
+		else if (Sess == KISSMonSess)				// KISS Monitor
+		{
+			for (int i = 0; i < 64; i++)
+				SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
+
+			MonTX->setVisible(0);
+			MonSup->setVisible(0);
+			MonUI->setVisible(0);
+			MonColour->setVisible(0);
+
+			EnableMonitor->setVisible(1);
+			EnableMonitor->setChecked(KISSMonEnable);
+			MonLocalTime->setChecked(Sess->mlocaltime);
+			MonNodes->setChecked(Sess->MonitorNODES);
+		}
+		else
+		{
+			EnableMonitor->setVisible(0);
+			MonTX->setVisible(1);
+			MonSup->setVisible(1);
+			MonUI->setVisible(1);
+			MonColour->setVisible(1);
+		}
+
 		if (Sess->PortMonString[0])
 		{
 			char * ptr = (char *)malloc(2048);
@@ -2043,6 +2159,7 @@ void QtTermTCP::tabSelected(int Current)
 			}
 			free(ptr);
 
+			MonLocalTime->setChecked(Sess->mlocaltime);
 			MonTX->setChecked(Sess->mtxparam);
 			MonSup->setChecked(Sess->mcomparam);
 			MonUI->setChecked(Sess->monUI);
@@ -2166,6 +2283,10 @@ void QtTermTCP::Connect()
 		&Sess->portmask, &Sess->mtxparam, &Sess->mcomparam,
 		&Sess->MonitorNODES, &Sess->MonitorColour, &Sess->monUI);
 
+	Sess->mlocaltime = (Sess->mtxparam >> 7);
+	Sess->mtxparam &= 1;
+
+	MonLocalTime->setChecked(Sess->mlocaltime);
 	MonTX->setChecked(Sess->mtxparam);
 	MonSup->setChecked(Sess->mcomparam);
 	MonUI->setChecked(Sess->monUI);
@@ -2443,8 +2564,13 @@ void QtTermTCP::menuChecked()
 		return;
 	}
 
-
-	if (Act == MonTX)
+	if (Act == EnableMonitor)
+		ActiveSession->EnableMonitor = state;
+	else if (Act == EnableMonLog)
+		ActiveSession->LogMonitor = state;
+	else if (Act == MonLocalTime)
+		ActiveSession->mlocaltime = state;
+	else if (Act == MonTX)
 		ActiveSession->mtxparam = state;
 	else if (Act == MonSup)
 		ActiveSession->mcomparam = state;
@@ -2499,26 +2625,24 @@ void QtTermTCP::menuChecked()
 		}
 	}
 
-	// Get active Session
-/*
-
-	QMdiSubWindow *SW = mdiArea->activeSubWindow();
-
-	Ui_ListenSession * Sess;
-
-	for (int i = 0; i < _sessions.size(); ++i)
-	{
-		Sess = _sessions.at(i);
-
-//	for (Ui_ListenSession * Sess : _sessions)
-//	{
-		if (Sess->sw == SW)
-		{
-		*/
 
 	if (ActiveSession->clientSocket && ActiveSession->SessionType & Mon)
 		SendTraceOptions(ActiveSession);
 
+	else if (AGWUsers && ActiveSession == AGWUsers->MonSess)
+	{
+		AGWMonEnable = ActiveSession->EnableMonitor;
+		AGWLocalTime = ActiveSession->mlocaltime;
+		AGWMonNodes = ActiveSession->MonitorNODES;
+		Send_AGW_m_Frame((QTcpSocket*)ActiveSession->AGWSession);
+	}
+
+	else if (ActiveSession == KISSMonSess)
+	{
+		KISSLocalTime = ActiveSession->mlocaltime; 
+		KISSMonEnable = ActiveSession->EnableMonitor;
+		KISSMonNodes = ActiveSession->MonitorNODES;
+	}
 	return;
 }
 
@@ -2903,7 +3027,13 @@ extern "C" void WritetoOutputWindowEx(Ui_ListenSession * Sess, unsigned char * B
 	{
 		if (AlertBeep)
 			myBeep(&IntervalWAV);
+
 	}
+
+	// Alert if QtTerm not active window (unless Mon window)
+
+	if((Sess->SessionType & Mon) == 0)
+		FlashifNotActive();
 
 	// if tabbed and not active tab set tab label red
 
@@ -3094,6 +3224,8 @@ lineloop:
 
 }
 
+void WriteMonitorLog(Ui_ListenSession * Sess, char * Msg);
+
 extern "C" void WritetoMonWindow(Ui_ListenSession * Sess, unsigned char * Msg, int len)
 {
 	char * ptr1 = (char *)Msg, *ptr2;
@@ -3172,7 +3304,9 @@ lineloop:
 
 	*(ptr2++) = 0;
 
-	//		if (LogMonitor) WriteMonitorLine(ptr1, ptr2 - ptr1);
+	
+	if (Sess->LogMonitor)
+		WriteMonitorLog(Sess, ptr1);
 
 	num = ptr2 - ptr1 - 1;
 
@@ -3356,10 +3490,10 @@ void GetSettings()
 	AlertBeep = settings->value("AlertBeep", 1).toInt();
 	AlertInterval = settings->value("AlertInterval", 300).toInt();
 	ConnectBeep = settings->value("ConnectBeep", 1).toInt();
-	ConnectWAV = settings->value("ConnectWAV", "").toString().toUtf8();
-	AlertWAV = settings->value("AlertWAV", "").toString().toUtf8();
-	BellWAV = settings->value("BellWAV", "").toString().toUtf8();
-	IntervalWAV = settings->value("IntervalWAV", "").toString().toUtf8();
+	ConnectWAV = settings->value("ConnectWAV", ":/PCBeep").toString().toUtf8();
+	AlertWAV = settings->value("AlertWAV", ":/PCBeep").toString().toUtf8();
+	BellWAV = settings->value("BellWAV", ":/PCBeep").toString().toUtf8();
+	IntervalWAV = settings->value("IntervalWAV", ":/PCBeep").toString().toUtf8();
 
 	UseKeywords = settings->value("UseKeywords", 0).toInt();
 	KeyWordsFile = settings->value("KeyWordsFile", "keywords.sys").toString().toUtf8();
@@ -3377,6 +3511,8 @@ void GetSettings()
 
 	AGWEnable = settings->value("AGWEnable", 0).toInt();
 	AGWMonEnable = settings->value("AGWMonEnable", 0).toInt();
+	AGWLocalTime = settings->value("AGWLocalTime", 0).toInt();
+	AGWMonNodes = settings->value("AGWMonNodes", 0).toInt();
 	strcpy(AGWTermCall, settings->value("AGWTermCall", "").toString().toUtf8());
 	strcpy(AGWBeaconDest, settings->value("AGWBeaconDest", "").toString().toUtf8());
 	strcpy(AGWBeaconPath, settings->value("AGWBeaconPath", "").toString().toUtf8());
@@ -3390,6 +3526,11 @@ void GetSettings()
 	convUTF8 = settings->value("convUTF8", 0).toInt();
 
 	KISSEnable = settings->value("KISSEnable", 0).toInt();
+	KISSMonEnable = settings->value("KISSMonEnable", 1).toInt();
+	KISSLocalTime = settings->value("KISSLocalTime", 0).toInt();
+	KISSMonNodes = settings->value("KISSMonNodes", 0).toInt();
+
+	KISSListen = settings->value("KISSListen", 1).toInt();
 	strcpy(MYCALL, settings->value("MYCALL", "").toString().toUtf8());
 	strcpy(KISSHost, settings->value("KISSHost", "127.0.0.1").toString().toUtf8());
 	KISSPortNum = settings->value("KISSPort", 8100).toInt();
@@ -3600,6 +3741,8 @@ extern "C" void SaveSettings()
 
 	settings->setValue("AGWEnable", AGWEnable);
 	settings->setValue("AGWMonEnable", AGWMonEnable);
+	settings->setValue("AGWLocalTime", AGWLocalTime);
+	settings->setValue("AGWMonNodes", AGWMonNodes);
 	settings->setValue("AGWTermCall", AGWTermCall);
 	settings->setValue("AGWBeaconDest", AGWBeaconDest);
 	settings->setValue("AGWBeaconPath", AGWBeaconPath);
@@ -3611,8 +3754,12 @@ extern "C" void SaveSettings()
 	settings->setValue("AGWPaclen", AGWPaclen);
 	settings->setValue("AGWToCalls", AGWToCalls);
 
-
 	settings->setValue("KISSEnable", KISSEnable);
+	settings->setValue("KISSMonEnable", KISSMonEnable);
+	settings->setValue("KISSLocalTime", KISSLocalTime);
+	settings->setValue("KISSMonNodes", KISSMonNodes);
+
+	settings->setValue("KISSListen", KISSListen);
 	settings->setValue("MYCALL", MYCALL);
 	settings->setValue("KISSHost", KISSHost);
 	settings->setValue("KISSMode", KISSMode);
@@ -3706,6 +3853,9 @@ QtTermTCP::~QtTermTCP()
 	{
 		Sess = _sessions.at(i);
 
+		if (Sess->monLogfile)
+			Sess->monLogfile->close();
+
 		if (Sess->clientSocket)
 		{
 			int loops = 100;
@@ -3713,7 +3863,6 @@ QtTermTCP::~QtTermTCP()
 			while (Sess->clientSocket && loops-- && Sess->clientSocket->state() != QAbstractSocket::UnconnectedState)
 				QThread::msleep(10);
 		}
-
 	}
 
 	if (AGWSock && AGWSock->ConnectedState == QAbstractSocket::ConnectedState)
@@ -3809,6 +3958,12 @@ extern "C" void myBeep(QString * WAV)
 
 	// Using .wav files
 
+//	QSoundEffect effect;
+//	effect.setSource(QUrl::fromLocalFile(*WAV));
+//	effect.setLoopCount(1);
+//	effect.setVolume(1.0f);
+//	effect.play();
+
 	QSound::play(*WAV);
 }
 
@@ -3859,6 +4014,7 @@ void QtTermTCP::KISSSlot()
 
 	deviceUI = &UI;
 	KISS->KISSEnable->setChecked(KISSEnable);
+	KISS->KISSListen->setChecked(KISSListen);
 	KISS->MYCALL->setText(MYCALL);
 
 	//	connect(KISS->SerialPort, SIGNAL(currentIndexChanged(int)), this, SLOT(PTTPortChanged(int)));
@@ -3912,6 +4068,7 @@ void QtTermTCP::KISSaccept()
 	strcpy(oldHost, KISSHost);
 
 	KISSEnable = KISS->KISSEnable->isChecked();
+	KISSListen = KISS->KISSListen->isChecked();
 	actHost[18]->setVisible(KISSEnable);			// Show KISS Connect Line
 
 	strcpy(MYCALL, KISS->MYCALL->text().toUtf8().toUpper());
@@ -4007,15 +4164,20 @@ void QtTermTCP::AlertSlot()
 	Alert->useBeep->setChecked(useBeep);
 	Alert->useFiles->setChecked(!useBeep);
 
-	Alert->connectFile->setText(ConnectWAV);
-	Alert->bellsFile->setText(BellWAV);
-	Alert->intervalFile->setText(IntervalWAV);
-	Alert->keywordWAV->setText(AlertWAV);
+	Alert->connectFile->setCurrentText(ConnectWAV);
+	Alert->bellsFile->setCurrentText(BellWAV);
+	Alert->intervalFile->setCurrentText(IntervalWAV);
+	Alert->keywordWAV->setCurrentText(AlertWAV);
 
 	QObject::connect(Alert->chooseInbound, SIGNAL(clicked()), this, SLOT(chooseInboundWAV()));
 	QObject::connect(Alert->chooseBells, SIGNAL(clicked()), this, SLOT(chooseBellsWAV()));
 	QObject::connect(Alert->chooseInterval, SIGNAL(clicked()), this, SLOT(chooseIntervalWAV()));
 	QObject::connect(Alert->chooseKeyAlert, SIGNAL(clicked()), this, SLOT(chooseAlertWAV()));
+
+	QObject::connect(Alert->testBells, SIGNAL(clicked()), this, SLOT(testBellsWAV()));
+	QObject::connect(Alert->TestInbound, SIGNAL(clicked()), this, SLOT(testInboundWAV()));
+	QObject::connect(Alert->testInterval, SIGNAL(clicked()), this, SLOT(testIntervalWAV()));
+	QObject::connect(Alert->TestKeyAlert, SIGNAL(clicked()), this, SLOT(testAlertWAV()));
 
 	QObject::connect(Alert->okButton, SIGNAL(clicked()), this, SLOT(alertAccept()));
 	QObject::connect(Alert->cancelButton, SIGNAL(clicked()), this, SLOT(alertReject()));
@@ -4033,7 +4195,7 @@ void QtTermTCP::chooseInboundWAV()
 	ConnectWAV = QFileDialog::getOpenFileName(this,
 		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
 
-	Alert->connectFile->setText(ConnectWAV);
+	Alert->connectFile->setCurrentText(ConnectWAV);
 
 }
 
@@ -4042,7 +4204,7 @@ void QtTermTCP::chooseBellsWAV()
 	BellWAV = QFileDialog::getOpenFileName(this,
 		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
 
-	Alert->bellsFile->setText(BellWAV);
+	Alert->bellsFile->setCurrentText(BellWAV);
 }
 
 void QtTermTCP::chooseIntervalWAV()
@@ -4050,7 +4212,7 @@ void QtTermTCP::chooseIntervalWAV()
 	IntervalWAV = QFileDialog::getOpenFileName(this,
 		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
 
-	Alert->intervalFile->setText(IntervalWAV);
+	Alert->intervalFile->setCurrentText(IntervalWAV);
 }
 
 void QtTermTCP::chooseAlertWAV()
@@ -4058,8 +4220,30 @@ void QtTermTCP::chooseAlertWAV()
 	AlertWAV = QFileDialog::getOpenFileName(this,
 		tr("Select Wav"), "", tr("Sound Files (*.wav)"));
 
-	Alert->keywordWAV->setText(AlertWAV);
+	Alert->keywordWAV->setCurrentText(AlertWAV);
 }
+
+void QtTermTCP::testInboundWAV()
+{
+	QSound::play(Alert->connectFile->currentText());
+}
+
+void QtTermTCP::testBellsWAV()
+{
+	QSound::play(Alert->bellsFile->currentText());
+}
+
+void QtTermTCP::testIntervalWAV()
+{
+	QSound::play(Alert->intervalFile->currentText());
+}
+
+void QtTermTCP::testAlertWAV()
+{
+	QSound::play(Alert->keywordWAV->currentText());
+}
+
+
 
 void QtTermTCP::alertAccept()
 {
@@ -4075,10 +4259,10 @@ void QtTermTCP::alertAccept()
 	UseKeywords = Alert->KeywordBeep->isChecked();
 	KeyWordsFile = Alert->keywordFile->text();
 
-	ConnectWAV = Alert->connectFile->text();
-	BellWAV = Alert->bellsFile->text();
-	IntervalWAV = Alert->intervalFile->text();
-	AlertWAV = Alert->keywordWAV->text();
+	ConnectWAV = Alert->connectFile->currentText();
+	BellWAV = Alert->bellsFile->currentText();
+	IntervalWAV = Alert->intervalFile->currentText();
+	AlertWAV = Alert->keywordWAV->currentText();
 
 	delete(Alert);
 	SaveSettings();
@@ -4457,6 +4641,8 @@ void QtTermTCP::onNewConnection()
 
 	if (ConnectBeep)
 		myBeep(&ConnectWAV);
+
+	QApplication::alert(mythis, 0);
 }
 
 void QtTermTCP::onSocketStateChanged(QAbstractSocket::SocketState socketState)
@@ -4672,8 +4858,8 @@ extern "C" void SendTraceOptions(Ui_ListenSession * Sess)
 		return;
 
 	char Buffer[80];
-	int Len = sprintf(Buffer, "\\\\\\\\%llx %x %x %x %x %x %x %x\r", Sess->portmask, Sess->mtxparam, Sess->mcomparam,
-		Sess->MonitorNODES, Sess->MonitorColour, Sess->monUI, 0, 1);
+	int Len = sprintf(Buffer, "\\\\\\\\%llx %x %x %x %x %x %x %x\r", Sess->portmask, Sess->mtxparam | (Sess->mlocaltime << 7),
+		Sess->mcomparam, Sess->MonitorNODES, Sess->MonitorColour, Sess->monUI, 0, 1);
 
 	strcpy(&MonParams[Sess->CurrentHost][0], &Buffer[4]);
 	SaveSettings();
@@ -4798,6 +4984,49 @@ void QtTermTCP::xon_mdiArea_changed()
 
 			// If a monitor Window, change Monitor config settings
 
+			EnableMonLog->setChecked(Sess->LogMonitor);
+
+			if (AGWUsers && Sess == AGWUsers->MonSess)		// AGW Monitor
+			{
+				for (int i = 0; i < 64; i++)
+					SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
+
+				MonTX->setVisible(0);
+				MonSup->setVisible(0);
+				MonUI->setVisible(0);
+				MonColour->setVisible(0);
+
+				EnableMonitor->setVisible(1);
+				EnableMonitor->setChecked(AGWMonEnable);
+
+				MonLocalTime->setChecked(Sess->mlocaltime);
+				MonNodes->setChecked(Sess->MonitorNODES);
+			}
+			else if (Sess == KISSMonSess)				// KISS Monitor
+			{
+				for (int i = 0; i < 64; i++)
+					SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
+
+				MonTX->setVisible(0);
+				MonSup->setVisible(0);
+				MonUI->setVisible(0);
+				MonColour->setVisible(0);
+
+				EnableMonitor->setVisible(1);
+				EnableMonitor->setChecked(KISSMonEnable);
+				MonLocalTime->setChecked(Sess->mlocaltime);
+				MonNodes->setChecked(Sess->MonitorNODES);
+			}
+
+			else
+			{
+				EnableMonitor->setVisible(0);
+				MonTX->setVisible(1);
+				MonSup->setVisible(1);
+				MonUI->setVisible(1);
+				MonColour->setVisible(1);
+			}
+
 			if (Sess->PortMonString[0])
 			{
 				char * ptr = (char *)malloc(2048);
@@ -4838,6 +5067,7 @@ void QtTermTCP::xon_mdiArea_changed()
 				}
 				free(ptr);
 
+				MonLocalTime->setChecked(Sess->mlocaltime);
 				MonTX->setChecked(Sess->mtxparam);
 				MonSup->setChecked(Sess->mcomparam);
 				MonUI->setChecked(Sess->monUI);
@@ -5275,12 +5505,12 @@ void QtTermTCP::VARAreadyRead()
 					if (Mode[0])
 					{
 						sprintf(Title, "Connected to %s Mode %s", CallFrom, Mode);
-						n = sprintf(Message, "Incoming Connected from %s %s Mode\r\n", CallFrom, Mode);
+						n = sprintf(Message, "Incoming VARA Connect from %s %s Mode\r\n", CallFrom, Mode);
 					}
 					else
 					{
 						sprintf(Title, "Connected to %s", CallFrom);
-						n = sprintf(Message, "Incoming Connected from %s\r\n", CallFrom);
+						n = sprintf(Message, "Incoming VARA Connect from %s\r\n", CallFrom);
 					}
 
 					WritetoOutputWindow(Sess, (unsigned char *)Message, n);
@@ -5299,6 +5529,14 @@ void QtTermTCP::VARAreadyRead()
 						mythis->setWindowTitle(Title);
 
 					setMenus(true);
+
+					if (ConnectBeep)
+						myBeep(&ConnectWAV);
+
+					if (listenCText[0])
+						VARADataSock->write(listenCText);
+
+					QApplication::alert(mythis, 0);
 
 				}
 			}
@@ -6417,7 +6655,7 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 
 				//	for (Ui_ListenSession * S: _sessions)
 				//	{
-				if ((S->SessionType == Mon) && S->clientSocket == NULL && S->KISSSession == NULL)
+				if ((S->SessionType == Mon) && S->clientSocket == NULL && S->KISSSession == NULL && (AGWUsers == NULL || (S != AGWUsers->MonSess))  && S != KISSMonSess)
 				{
 					Sess = S;
 					break;
@@ -6439,7 +6677,7 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 			{
 				S = _sessions.at(i);
 
-				if (S->clientSocket == NULL && S->KISSSession == NULL)
+				if (S->clientSocket == NULL && S->KISSSession == NULL  && S->AGWSession == NULL && (AGWUsers == NULL || (S != AGWUsers->MonSess)) && S != KISSMonSess)
 				{
 					Sess = S;
 					break;
@@ -6450,7 +6688,7 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 		{
 			S = _sessions.at(0);
 
-			if (S->clientSocket == NULL && S->KISSSession == NULL)
+			if (S->clientSocket == NULL && S->AGWSession == NULL && S->KISSSession == NULL && (AGWUsers == NULL || (S != AGWUsers->MonSess)) && S != KISSMonSess)
 				Sess = S;
 
 		}
@@ -6465,6 +6703,9 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 				tabWidget->setTabText(Sess->Tab, "KISS Mon");
 			else if (TermMode == Single)
 				mythis->setWindowTitle("KISS Monitor Window");
+
+			Sess->mlocaltime = KISSLocalTime;
+			Sess->MonitorNODES = KISSMonNodes;
 
 			//			if (TermMode == Single)	
 			//			{
@@ -6495,6 +6736,9 @@ extern "C" void monitor_frame(int snd_ch, string * frame, char * code, int  tx, 
 
 	Len = strlen(Msg);
 
+	if (Len < 10)		// Suppressed NODES
+		return;
+
 	if (Msg[Len - 1] != '\r')
 	{
 		Msg[Len++] = '\r';
@@ -6506,7 +6750,7 @@ extern "C" void monitor_frame(int snd_ch, string * frame, char * code, int  tx, 
 
 }
 
-extern "C" Ui_ListenSession * ax25IncommingConnect(TAX25Port * AX25Sess)
+extern "C" Ui_ListenSession * ax25IncomingConnect(TAX25Port * AX25Sess)
 {
 	// Look for/create Terminal Window for connection
 
@@ -6578,7 +6822,7 @@ extern "C" Ui_ListenSession * ax25IncommingConnect(TAX25Port * AX25Sess)
 			mythis->setWindowTitle(Title);
 
 		AX25Sess->port = 0;
-		AX25Sess->Sess = Sess;				// Crosslink AGW and Term Sessions
+		AX25Sess->Sess = Sess;				// Crosslink KISS and Term Sessions
 		AX25Sess->PID = 240;;
 
 		Sess->KISSSession = AX25Sess;
@@ -6587,6 +6831,8 @@ extern "C" Ui_ListenSession * ax25IncommingConnect(TAX25Port * AX25Sess)
 
 		if (ConnectBeep)
 			myBeep(&ConnectWAV);
+
+		QApplication::alert(mythis, 0);
 
 		// Send CText if defined
 
@@ -7496,5 +7742,108 @@ void Ui_ListenSession::timerEvent(QTimerEvent *event)
 		}
 	}
 	QWidget::timerEvent(event);
+}
+
+// Monitor Log FIle routines
+
+char * doXMLTransparency(char * string)
+{
+	// Make sure string doesn't contain forbidden XML chars (<>"'&)
+
+	char * newstring = (char *)malloc(5 * strlen(string) + 1);		// If len is zero still need null terminator
+
+	char * in = string;
+	char * out = newstring;
+	char c;
+
+	c = *(in++);
+
+	while (c)
+	{
+		switch (c)
+		{
+		case '<':
+
+			strcpy(out, "&lt;");
+			out += 4;
+			break;
+
+		case '>':
+
+			strcpy(out, "&gt;");
+			out += 4;
+			break;
+
+		case '"':
+
+			strcpy(out, "&quot;");
+			out += 6;
+			break;
+
+		case '\'':
+
+			strcpy(out, "&apos;");
+			out += 6;
+			break;
+
+		case '&':
+
+			strcpy(out, "&amp;");
+			out += 5;
+			break;
+
+		default:
+
+			*(out++) = c;
+		}
+		c = *(in++);
+	}
+
+	*(out++) = 0;
+	return newstring;
+}
+
+void WriteMonitorLog(Ui_ListenSession * Sess, char * Msg)
+{
+	// Write as HTML to preserve formatting
+
+	char Line[512];
+	char * HTMLText;
+
+	if (Sess->monLogfile == nullptr)
+	{
+		QString FN = "QTTermMonLog" + timeLoaded + "_" + QString::number(Sess->sessNo) + ".html";
+		Sess->monLogfile = new QFile(FN);
+
+		if (Sess->monLogfile)
+			Sess->monLogfile->open(QIODevice::WriteOnly | QIODevice::Text);
+		else
+			return;
+	}
+
+	if (Msg[0] == 0x1b)
+	{
+		// Colour Escape
+
+		if (Msg[1] == 17)
+			Sess->monSpan = (char *)"<span style=\"color:blue; white-space:pre;font-family: monospace\">";// , monRxColour.data());
+		else
+			Sess->monSpan = (char *)"<span style=\"color:red; white-space:pre;font-family: monospace\">";// , monTxColour.data());
+
+		HTMLText = doXMLTransparency(&Msg[2]);
+	}
+	else
+	{
+		// Leave colour at last set value
+
+		HTMLText = doXMLTransparency(Msg);
+	}
+
+	sprintf(Line, "%s%s</span><br>\r\n", Sess->monSpan, HTMLText);
+	
+	Sess->monLogfile->write(Line);
+
+	free(HTMLText);
+
 }
 

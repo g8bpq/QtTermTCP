@@ -264,6 +264,22 @@ void AGWConnect::myaccept()
 	strcpy(CallTo, wCallTo->currentText().toUpper().toUtf8());
 	strcpy(Via, Digis->text().toUpper().toUtf8());
 
+	if (CallFrom[0] == 0)
+	{
+		QMessageBox msgBox;
+		msgBox.setText("Call From missing");
+		msgBox.exec();
+		return;
+	}
+
+	if (CallTo[0] == 0)
+	{
+		QMessageBox msgBox;
+		msgBox.setText("Call To missing");
+		msgBox.exec();
+		return;
+	}
+
 	// if digis have to form block with byte count followed by n 10 byte calls
 
 	if (Via[0])

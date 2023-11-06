@@ -25,6 +25,8 @@ along with QtSoundModem.  If not, see http://www.gnu.org/licenses
 UCHAR TimerEvent = TIMER_EVENT_OFF;
 extern int busy;
 int listenEnable;
+int KISSListen = 1;
+
 void * KISSSockCopy[4];
 extern UCHAR axMYCALL[7] = "";			// Mycall in ax.25
 
@@ -1023,7 +1025,7 @@ void  on_I(void * socket, TAX25Port * AX25Sess, int PID, Byte * path, string * d
 }
 /////////////////////////// U-FRAMES ////////////////////////////////////
 
-void * ax25IncommingConnect(TAX25Port * AX25Sess);
+void * ax25IncomingConnect(TAX25Port * AX25Sess);
 
 void on_SABM(void * socket, TAX25Port * AX25Sess)
 {
@@ -1087,7 +1089,7 @@ void on_SABM(void * socket, TAX25Port * AX25Sess)
 		
 		add_pkt_buf(AX25Sess, make_frame(NULL, AX25Sess->Path, 0, 0, 0, U_FRM, U_UA, FALSE, SET_P, SET_R));
 		
-		if (ax25IncommingConnect(AX25Sess))		// Attach to Terminal
+		if (ax25IncomingConnect(AX25Sess))		// Attach to Terminal
 			AX25_conn(AX25Sess, AX25Sess->snd_ch, MODE_OTHER);
 	
 		return;
@@ -1550,7 +1552,7 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 		if (memcmp(path, axMYCALL, 7) != 0)
 			return;								// ignore
 
-		if (listenEnable == 0)
+		if (KISSListen == 0)
 		{
 			set_DM(snd_ch, path);
 			freeString(data);

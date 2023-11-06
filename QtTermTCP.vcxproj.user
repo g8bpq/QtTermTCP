@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LocalDebuggerWorkingDirectory>..\..\bpq32\CommonSource</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerWorkingDirectory>$(APPDATA)</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -15,15 +15,15 @@
     <QtLastBackgroundBuild>2022-05-19T07:28:58.9302359Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <QtLastBackgroundBuild>2023-10-09T09:12:25.3524292Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2023-10-14T13:14:56.5532991Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="QtSettings">
-    <QtLastBackgroundBuild>2023-10-09T09:12:25.6116327Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2023-10-14T13:14:56.7231497Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <QtLastBackgroundBuild>2023-10-09T09:12:25.0706672Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2023-10-14T13:14:55.9367569Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="QtSettings">
-    <QtLastBackgroundBuild>2023-10-09T09:12:25.2024312Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2023-10-14T13:14:56.2561805Z</QtLastBackgroundBuild>
   </PropertyGroup>
 </Project>

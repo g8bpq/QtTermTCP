@@ -38,7 +38,6 @@ void DecodeTeleText(Ui_ListenSession * Sess, char * page);
 
 int Bells = TRUE;
 int StripLF = FALSE;
-int LogMonitor = FALSE;
 int LogOutput = FALSE;
 int SendDisconnected = TRUE;
 int ChatMode = TRUE;
@@ -202,7 +201,6 @@ void GetKeyWordFile()
 }
 
 
-
 int CheckKeyWord(char * Word, char * Msg)
 {
 	char * ptr1 = Msg, *ptr2;
@@ -236,15 +234,24 @@ int CheckKeyWords(UCHAR * Msg, int len)
 	if (UseKeywords == 0 || NumberofKeyWords == 0)
 		return FALSE;
 
+	// we need to null terminate Msg, so create a copy
+
+	unsigned char * copy = (unsigned char *)malloc(len + 1);
+
+	memcpy(copy, Msg, len);
+	copy[len] = 0;
+
 	for (i = 1; i <= NumberofKeyWords; i++)
 	{
-		if (CheckKeyWord(KeyWords[i], (char *)Msg))
+		if (CheckKeyWord(KeyWords[i], (char *)copy))
 		{
 			myBeep(&AlertWAV);
+			free (copy);
 			return TRUE;			// Alert
 		}
 	}
 
+	free(copy);
 	return FALSE;					// OK
 
 }
@@ -956,6 +963,8 @@ int InnerProcessYAPPMessage(Ui_ListenSession * Sess, UCHAR * Msg, int Len)
 		case 2:
 
 			YAPPDate = 0;				// Switch to Normal (No Checksum) Mode
+
+			// Drop through
 
 		case 6:							// Send using YAPPC
 

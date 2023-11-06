@@ -29,6 +29,7 @@
 #include <QProcess>
 #include <QtSerialPort/QSerialPort>
 #include <QtMultimedia/QSound>
+#include <QtMultimedia/QSoundEffect>
 
 #define MAXHOSTS 16
 #define MAXPORTS 64
@@ -86,6 +87,8 @@ public:
 
 	char PortMonString[2048];		// 64 ports 32 Bytes
 	uint64_t portmask;
+	int EnableMonitor;
+	int mlocaltime;
 	int mtxparam;
 	int mcomparam;
 	int monUI;
@@ -110,6 +113,11 @@ public:
 	char pageBuffer[4096];
 	QBasicTimer timer;
 
+	int sessNo;			// Used to create unique log filename;
+	bool LogMonitor;
+	QFile * monLogfile;
+	char * monSpan;
+
 protected:
 
 	void timerEvent(QTimerEvent *event) override;
@@ -131,6 +139,7 @@ public:
 	QtTermTCP(QWidget *parent = NULL);
 	void closeEvent(QCloseEvent * event);
 	static void setFonts();
+
 	~QtTermTCP();
 
 private slots:
@@ -158,6 +167,10 @@ private slots:
 	void chooseBellsWAV();
 	void chooseIntervalWAV();
 	void chooseAlertWAV();
+	void testInboundWAV();
+	void testBellsWAV();
+	void testIntervalWAV();
+	void testAlertWAV();
 	void alertAccept();
 	void alertReject();
 	void VARASlot();

@@ -125,17 +125,6 @@ typedef struct TStringList_T
 } TStringList;
 
 
-typedef struct AGWUser_t
-{
-	void *socket;
-	string * data_in;
-	TStringList AGW_frame_buf;
-	boolean	Monitor;
-	boolean	Monitor_raw;
-	boolean reportFreqAndModem;			// Can report modem and frequency to host
-
-} AGWUser;
-
 typedef struct  TAX25Info_t
 {
 	longint	stat_s_pkt;
