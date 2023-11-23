@@ -2622,7 +2622,7 @@ void KISS_add_stream(void * Socket)
 
 	KissConnections = realloc(KissConnections, (KISSConCount + 1) * sizeof(void *));
 
-	KISS = KissConnections[KISSConCount++] = malloc(sizeof(KISS));
+	KISS = KissConnections[KISSConCount++] = malloc(sizeof(TKISSMode));
 
 	KISS->Socket = Socket;
 	KISS->data_in = newString();
@@ -2681,7 +2681,7 @@ TAX25Port * KISSConnectOut(void * Sess, char * CallFrom, char * CallTo, char * D
 
 		sprintf(path, "%s,%s", CallTo, CallFrom);
 
-		if (Digis)
+		if (Digis && Digis[0])
 		{
 			strcat(path, ",");
 			strcat(path, Digis);

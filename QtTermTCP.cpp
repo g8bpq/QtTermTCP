@@ -1,6 +1,6 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.71"
+#define VersionString "0.0.0.73"
 
 
 // .12 Save font weight
@@ -97,6 +97,14 @@
 
 //	Add option to use local time
 //	Fixes for Mac OS
+
+//	.72 November 2023
+//	Don't display "Enable Monitor" on startup
+
+//	.73 November 2023
+//	Raise RTS on KISS serial port
+
+
 
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -1172,7 +1180,6 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	if (TermMode == MDI)
 	{
 		mdiArea = new QMdiArea(ui.centralWidget);
-
 		mdiArea->setGeometry(QRect(0, 0, 771, 571));
 
 		mdiArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -1489,6 +1496,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	monitorMenu = mymenuBar->addMenu(tr("&Monitor"));
 
 	EnableMonitor = setupMenuLine(monitorMenu, (char *)"Enable Monitoring", this, 0);
+	EnableMonitor->setVisible(0);
 	EnableMonLog = setupMenuLine(monitorMenu, (char *)"Log to File", this, 0);
 	MonLocalTime = setupMenuLine(monitorMenu, (char *)"Use local time", this, 0);
 	MonTX = setupMenuLine(monitorMenu, (char *)"Monitor TX", this, 1);
@@ -2085,6 +2093,7 @@ void QtTermTCP::tabSelected(int Current)
 			for (int i = 0; i < 64; i++)
 				SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 
+			connectMenu->setEnabled(false);
 			MonTX->setVisible(0);
 			MonSup->setVisible(0);
 			MonUI->setVisible(0);
@@ -2100,6 +2109,7 @@ void QtTermTCP::tabSelected(int Current)
 			for (int i = 0; i < 64; i++)
 				SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 
+			connectMenu->setEnabled(false);
 			MonTX->setVisible(0);
 			MonSup->setVisible(0);
 			MonUI->setVisible(0);
@@ -4991,6 +5001,7 @@ void QtTermTCP::xon_mdiArea_changed()
 				for (int i = 0; i < 64; i++)
 					SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 
+				connectMenu->setEnabled(false);
 				MonTX->setVisible(0);
 				MonSup->setVisible(0);
 				MonUI->setVisible(0);
@@ -5007,6 +5018,7 @@ void QtTermTCP::xon_mdiArea_changed()
 				for (int i = 0; i < 64; i++)
 					SetPortMonLine(i, (char *)"", 0, 0);			// Set all hidden
 
+				connectMenu->setEnabled(false);
 				MonTX->setVisible(0);
 				MonSup->setVisible(0);
 				MonUI->setVisible(0);
@@ -6505,10 +6517,10 @@ void QtTermTCP::KISSTimer()
 	{
 		// Verify Serial port is still ok
 
-		if (m_serial && KISSConnected)
+ 		if (m_serial && KISSConnected)
 		{
 			m_serial->clearError();
-			m_serial->isDataTerminalReady();
+			boolean rc = m_serial->isDataTerminalReady();
 
 			if (m_serial->error())
 			{
@@ -6892,11 +6904,14 @@ int QtTermTCP::openSerialPort()
 	m_serial = new QSerialPort(this);
 
 	m_serial->setPortName(SerialPort);
-	m_serial->setBaudRate(KISSBAUD);
+	boolean ok = m_serial->setBaudRate(KISSBAUD);
 
 	if (m_serial->open(QIODevice::ReadWrite))
 	{
 		int i;
+
+		ok = m_serial->setRequestToSend(true);
+
 		connect(m_serial, &QSerialPort::readyRead, this, &QtTermTCP::readSerialData);
 		//		connect(m_serial, &QSerialPort::errorOccurred, this, &QtTermTCP::handleError);
 

@@ -5,6 +5,7 @@ cp --preserve  /mnt/Source/QT/QtTermTCP2/*.ui ./
 cp --preserve  /mnt/Source/QT/QtTermTCP2/*.pro ./
 cp --preserve  /mnt/Source/QT/QtTermTCP2/*.qrc ./
 cp --preserve  /mnt/Source/QT/QtTermTCP2/*.ico ./
+cp --preserve  /mnt/Source/QT/QtTermTCP2/*.wav ./
 qmake
 
 make -j4
