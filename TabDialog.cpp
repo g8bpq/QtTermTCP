@@ -56,7 +56,7 @@ extern char UserName[MAXHOSTS + 1][80];
 extern char Password[MAXHOSTS + 1][80];
 extern char SessName[MAXHOSTS + 1][80];
 
-extern char MYCALL[32];
+extern char KISSMYCALL[32];
 
 QLineEdit *TermCall;
 QGroupBox *groupBox;
@@ -114,6 +114,7 @@ extern char * AGWPortList;
 extern QStringList AGWToCalls;
 
 extern int KISSMode;
+extern char KISSVia[128];				// Digi String
 
 extern Ui_ListenSession * ActiveSession;
 
@@ -470,7 +471,7 @@ KISSConnect::KISSConnect(QWidget *parent) : QDialog(parent)
 
 	scrollArea = new QScrollArea(this);
 	scrollArea->setObjectName(QString::fromUtf8("scrollArea"));
-	scrollArea->setGeometry(QRect(5, 5, 250, 200));
+	scrollArea->setGeometry(QRect(5, 5, 260, 200));
 	scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 	scrollArea->setWidgetResizable(false);
@@ -503,6 +504,13 @@ KISSConnect::KISSConnect(QWidget *parent) : QDialog(parent)
 	layout->addSpacing(10);
 	layout->addLayout(formLayout2);
 
+	Chan = new QComboBox();
+	Chan->setEditable(false);
+	Chan->setInsertPolicy(QComboBox::NoInsert);
+	Chan->addItems(QStringList() << "A" << "B" << "C" << "D");
+
+	formLayout2->addRow(new QLabel("Modem Channel"), Chan);
+
 	wCallTo = new QComboBox();
 	wCallTo->setEditable(true);
 	wCallTo->setInsertPolicy(QComboBox::NoInsert);
@@ -510,6 +518,7 @@ KISSConnect::KISSConnect(QWidget *parent) : QDialog(parent)
 	formLayout2->addRow(new QLabel("Call To"), wCallTo);
 
 	Digis = new QLineEdit();
+
 	formLayout2->addRow(new QLabel("Digis"), Digis);
 
 	layout->addSpacing(2);
@@ -522,6 +531,9 @@ KISSConnect::KISSConnect(QWidget *parent) : QDialog(parent)
 	scrollArea->setWidget(scrollAreaWidgetContents);
 
 	wCallTo->addItems(AGWToCalls);
+
+	Digis->setText(KISSVia);
+	Digis->resize(400, 20);
 
 	connect(buttonBox, SIGNAL(accepted()), this, SLOT(myaccept()));
 	connect(buttonBox, SIGNAL(rejected()), this, SLOT(myreject()));
@@ -544,16 +556,20 @@ void KISSConnect::myaccept()
 {
 	QVariant Q;
 
-	char CallTo[32];
-	char Via[128];
+	char CallTo[128];;
+	char Port[3];
+
 	strcpy(CallTo, wCallTo->currentText().toUpper().toUtf8());
-	strcpy(Via, Digis->text().toUpper().toUtf8());
+	strcpy(KISSVia, Digis->text().toUpper().toUtf8());
+	memcpy(Port, Chan->currentText().toUpper().toUtf8(), 1);
+
+	int PortNo = Port[0] - 'A';
 
 	TAX25Port * AX25Sess = 0;
 
 	// Check for duplicate session
 
-	AX25Sess = get_user_port_by_calls(0, MYCALL, CallTo);
+	AX25Sess = get_user_port_by_calls(0, KISSMYCALL, CallTo);
 
 	if (AX25Sess)
 	{
@@ -561,7 +577,7 @@ void KISSConnect::myaccept()
 
 		char Msg[256];
 
-		int Len = sprintf(Msg, "You already have a session between %s and %s so can't connect\r", MYCALL, CallTo);
+		int Len = sprintf(Msg, "You already have a session between %s and %s so can't connect\r", KISSMYCALL, CallTo);
 
 		WritetoOutputWindow(ActiveSession, (unsigned char *)Msg, Len);
 //		KISSConnect::accept();
@@ -581,7 +597,7 @@ void KISSConnect::myaccept()
 
 	if (KISSMode == 0)
 	{
-		ActiveSession->KISSSession = KISSConnectOut(ActiveSession, MYCALL, CallTo, Via, 0, (void *)KISSSock);
+		ActiveSession->KISSSession = KISSConnectOut(ActiveSession, KISSMYCALL, CallTo, KISSVia, PortNo, (void *)KISSSock);
 		WritetoOutputWindow(ActiveSession, (unsigned char *)"Connecting...\r", 14);
 		discAction->setEnabled(true);
 	}
@@ -597,7 +613,8 @@ void KISSConnect::myaccept()
 		ActiveSession->KISSSession = (void *)&DummyPort;		// Dummy marker to show session in use
 
 		strcpy(ActiveSession->UIDEST, CallTo);
-		strcpy(ActiveSession->UIPATH, Via);
+		strcpy(ActiveSession->UIPATH, KISSVia);
+		ActiveSession->UIPORT = PortNo;
 
 		if (TermMode == Tabbed)
 			Len = sprintf(Msg, "UI %s", CallTo);

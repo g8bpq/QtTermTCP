@@ -20,8 +20,12 @@ along with QtSoundModem.  If not, see http://www.gnu.org/licenses
 
 // UZ7HO Soundmodem Port by John Wiseman G8BPQ
 
+// This is a simplified version for QtTermTCP
+
 #include "ax25.h"
 #include <stdarg.h>
+
+extern int KISSChecksum;
 
 #ifdef WIN32
 
@@ -224,6 +228,8 @@ Byte users[4] = { 0,0,0,0 };
 
 short txtail[5] = { 50, 50, 50, 50, 50 };
 short txdelay[5] = { 400, 400, 400, 400, 400 };
+int sendTXDelay[4] = { 0, 0, 0, 0 };
+
 
 short modem_def[5] = { 1, 1, 1, 1, 1 };
 
@@ -861,7 +867,7 @@ int get_addr(char * Calls, UCHAR * AXCalls)
 	char * ptr, *Context;
 	int n = 8;						// Max digis
 
-	memset(AXCalls, 0, 70);
+	memset(AXCalls, 0, 72);
 
 	ptr = strtok_s(Calls, " ,", &Context);
 
@@ -877,7 +883,7 @@ int get_addr(char * Calls, UCHAR * AXCalls)
 
 	ptr = strtok_s(NULL, " ,", &Context);
 
-	if (ConvToAX25(ptr, axptr) == 0)
+	if (ptr == 0 || ConvToAX25(ptr, axptr) == 0)
 		return FALSE;
 
 	axptr += 7;
@@ -2495,6 +2501,7 @@ void KISSDataReceived(void * socket, unsigned char * data, int length)
 
 void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag);
 
+void KISSSendtoServer(void * Socket, char * Data, int Length);
 
 void ProcessKISSFrame(void * socket, UCHAR * Msg, int Len)
 {
@@ -2505,8 +2512,6 @@ void ProcessKISSFrame(void * socket, UCHAR * Msg, int Len)
 	int Chan;
 	int Opcode;
 	string * TXMSG;
-	unsigned short CRC;
-	UCHAR CRCString[2];
 
 	ptr1 = ptr2 = Msg;
 
@@ -2564,42 +2569,59 @@ void ProcessKISSFrame(void * socket, UCHAR * Msg, int Len)
 	if (Chan > 3)
 		return;
 
+	// This is a lot simpler than QtSM, as frames will always be immediately processed locally, so ack mode isn't needed.
+	//	but if enabled ack can be sent immediately
+	//	checksum if needed
+
 	switch (Opcode)
 	{
 	case KISS_ACKMODE:
+	{
+		// send ack
 
-		// How best to do ACKMODE?? I think pass whole frame including CMD and ack bytes to all_frame_buf
+		unsigned char ACK[16];
+		unsigned char * ackptr = ACK;
 
-		// But ack should only be sent to client that sent the message - needs more thought!
+		*ackptr++ = FEND;
+		*ackptr++ = Msg[0];			// opcode and channel
 
-		TXMSG = newString();
-		stringAdd(TXMSG, &Msg[0], Len);		// include  Control
+		*ackptr++ = Msg[1];
+		*ackptr++ = Msg[2];			// ACK Bytes
+		*ackptr++ = FEND;
 
-		CRC = get_fcs(&Msg[3], Len - 3);	// exclude control and ack bytes
+		KISSSendtoServer(socket, ACK, 5);
 
-		CRCString[0] = CRC & 0xff;
-		CRCString[1] = CRC >> 8;
+		// remove ack bytes
 
-		stringAdd(TXMSG, CRCString, 2);
+		memmove(&Msg[1], &Msg[3], Len - 2);
 
-		// Ackmode needs to know where to send ack back to, so save socket on end of data
+		// drop through to KISS Data
 
-		stringAdd(TXMSG, (unsigned char *)&socket, sizeof(socket));
-
-		// if KISS Optimise see if frame is really needed
-
-		if (!KISS_opt[Chan])
-			Add(&KISS.buffer[Chan], TXMSG);
-		else
-		{
-			if (add_raw_frames(Chan, TXMSG, &KISS.buffer[Chan]))
-				Add(&KISS.buffer[Chan], TXMSG);
-		}
-
-
-		return;
-
+		Len -= 2;
+	}
 	case KISS_DATA:
+
+		if (KISSChecksum)
+		{
+			//	SUM MESSAGE, AND IF DUFF DISCARD. IF OK DECREMENT COUNT TO REMOVE SUM
+
+			int sumlen = Len;
+			char * ptr = &Msg[0];
+			UCHAR sum = 0;
+
+			while (sumlen--)
+			{
+				sum ^= *(ptr++);
+			}
+
+			if (sum)
+			{
+				Debugprintf("KISS Checksum Error");
+				return;
+			}
+
+			Len--;							// Remove Checksum
+		}
 
 		TXMSG = newString();
 		stringAdd(TXMSG, &Msg[1], Len - 1);		// include Control
@@ -2702,7 +2724,7 @@ TAX25Port * KISSConnectOut(void * Sess, char * CallFrom, char * CallTo, char * D
 		strcpy((char *)AX25Sess->Path, (char *)axpath);
 		reverse_addr(axpath, AX25Sess->ReversePath, AX25Sess->pathLen);
 
-		set_link(AX25Sess, AX25Sess->Path);
+		set_link(AX25Sess, AX25Sess->Path);				// Sends SABM
 		return AX25Sess;
 	}
 	return 0;

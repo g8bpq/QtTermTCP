@@ -20,12 +20,18 @@ along with QtSoundModem.  If not, see http://www.gnu.org/licenses
 
 // UZ7HO Soundmodem Port by John Wiseman G8BPQ
 
+// This is a simplified version for QtTermTCP
+
+
+
 #include "ax25.h"
 
 UCHAR TimerEvent = TIMER_EVENT_OFF;
 extern int busy;
 int listenEnable;
 int KISSListen = 1;
+int KISSChecksum = 0;
+int KISSAckMode = 0;
 
 void * KISSSockCopy[4];
 extern UCHAR axMYCALL[7] = "";			// Mycall in ax.25
@@ -301,6 +307,32 @@ int KISS_encode(UCHAR * KISSBuffer, int port, string * frame)
 			(*ptr2++) = c;
 		}
 	}
+
+	// Add checksum if needed
+
+	if (KISSChecksum)
+	{
+		c = TXCCC;
+
+		// We don't support TNCX with Checksum
+
+		switch (c)
+		{
+		case FEND:
+			(*ptr2++) = FESC;
+			(*ptr2++) = TFEND;
+			break;
+
+		case FESC:
+			(*ptr2++) = FESC;
+			(*ptr2++) = TFESC;
+			break;
+
+		default:
+			(*ptr2++) = c;
+		}
+	}
+
 	(*ptr2++) = FEND;
 
 	return (int)(ptr2 - KISSBuffer);
@@ -317,23 +349,13 @@ void  add_pkt_buf(TAX25Port * AX25Sess, string * data)
 
 	// ? Don't we just send to TNC? 
 
-	Length = KISS_encode(KISSBuffer, 0, data);
+	Length = KISS_encode(KISSBuffer, AX25Sess->snd_ch, data);
 
 	KISSSendtoServer(AX25Sess->socket, KISSBuffer, Length);
 
 	monitor_frame(0, data, "", 1, 0);				// Monitor
 	freeString(data);
 
-
-//	while (i < AX25Sess->frame_buf.Count && !found)
-//	{
-//		found = compareStrings(Strings(&AX25Sess->frame_buf, i++), data);
-//	}
-	
-//	if (found)
-//	freeString(data);
-//	else
-//		Add(&AX25Sess->frame_buf, data);
 }
 
 void add_I_FRM(TAX25Port * AX25Sess)
@@ -1227,20 +1249,9 @@ void timer_event()
 	for (snd_ch = 0; snd_ch < 4; snd_ch++)
 	{
 		//reset the slottime timer
-		if (dyn_frack[snd_ch])
-		{
-			UpdateActiveConnects(snd_ch);
-			if (users[snd_ch] > 0)
-				active = users[snd_ch] - 1;
-			else
-				active = 0;
 
-			frack = frack_time[snd_ch] + frack_time[snd_ch] * active * 0.5;
-		}
-		else
-			frack = frack_time[snd_ch];
+		frack = frack_time[snd_ch];
 
-		//
 		for (port = 0; port < port_num; port++)
 		{
 			AX25Sess = &AX25Port[snd_ch][port];
@@ -1703,10 +1714,12 @@ void analiz_frame(int snd_ch, string * frame, void * socket, boolean fecflag)
 
 int get_addr(char * Calls, UCHAR * AXCalls);
 
-void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, Byte *  Msg, int MsgLen)
+void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, char * via, Byte *  Msg, int MsgLen)
 {
-	Byte path[80];
-	char Calls[80];
+	char Addrs[256];
+	Byte path[256];
+	int destlen = 0;
+
 	string * Data = newString();
 	string * Frame;
 
@@ -1715,17 +1728,19 @@ void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, Byte *  Msg, int
 
 	stringAdd(Data, Msg, MsgLen);
 
-	sprintf(Calls, "%s,%s", CallTo, CallFrom);
+	// We Need Dest, Source, Digis in path, with end of address bit set appropriately.
 
-	get_addr(Calls, path);
+	sprintf(Addrs, "%s %s %s", CallTo, CallFrom, via);
+
+	destlen = get_addr(Addrs, path);
 
 	Frame = make_frame(Data, path, PID, 0, 0, U_FRM, U_UI, FALSE, SET_F, SET_C);
 
 	// ? Don't we just send to TNC? 
 
-	Length = KISS_encode(KISSBuffer, 0, Frame);
+	Length = KISS_encode(KISSBuffer, port, Frame);
 
-	KISSSendtoServer(KISSSockCopy[port], KISSBuffer, Length);
+	KISSSendtoServer(KISSSockCopy[0], KISSBuffer, Length);
 
 	monitor_frame(0, Frame, "", 1, 0);				// Monitor
 	freeString(Frame);

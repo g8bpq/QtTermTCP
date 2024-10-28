@@ -146,6 +146,7 @@ public:
 public:
 	QLineEdit * wCallFrom;
 	QComboBox * wCallTo;
+	QComboBox * Chan;
 	QLineEdit * Digis;
 	QLineEdit * UIDest;
 	QListWidget * RadioPorts;

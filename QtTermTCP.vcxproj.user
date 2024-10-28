@@ -1,11 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LocalDebuggerWorkingDirectory>$(APPDATA)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerWorkingDirectory>C:\Devprogs\BPQ32\QtTermTCP</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommand>C:\Dev\Msdev2005\projects\QT\QtTermTCP\Win32\Debug\QtTermTCP.exe</LocalDebuggerCommand>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <LocalDebuggerWorkingDirectory>..\..\..\..\..\DevProgs\BPQ32</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerWorkingDirectory>C:\Devprogs\BPQ32\QtTermTCP</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -15,15 +16,15 @@
     <QtLastBackgroundBuild>2022-05-19T07:28:58.9302359Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <QtLastBackgroundBuild>2023-10-14T13:14:56.5532991Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2024-08-18T13:22:28.7149666Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="QtSettings">
-    <QtLastBackgroundBuild>2023-10-14T13:14:56.7231497Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2024-08-18T13:22:29.0403359Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <QtLastBackgroundBuild>2023-10-14T13:14:55.9367569Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2024-08-18T13:22:28.3840024Z</QtLastBackgroundBuild>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="QtSettings">
-    <QtLastBackgroundBuild>2023-10-14T13:14:56.2561805Z</QtLastBackgroundBuild>
+    <QtLastBackgroundBuild>2024-08-18T13:22:28.6207028Z</QtLastBackgroundBuild>
   </PropertyGroup>
 </Project>

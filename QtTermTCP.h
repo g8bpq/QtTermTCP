@@ -100,6 +100,7 @@ public:
 	void * AGWMonSession;
 	void * KISSSession;
 	int KISSMode;					// Connected or UI
+	int UIPORT;
 	char UIDEST[32];
 	char UIPATH[128];
 
@@ -159,6 +160,7 @@ private slots:
 	void LDisconnect(Ui_ListenSession * LUI);
 	void SetupHosts();
 	void MyTimerSlot();
+	void SlowTimerSlot();
 	void KISSTimerSlot();
 	void ListenSlot();
 	void AGWSlot();

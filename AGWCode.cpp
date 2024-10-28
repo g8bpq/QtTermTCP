@@ -262,7 +262,7 @@ void doAGWBeacon()
 		char ports[80];
 
 		char * ptr, * context;
-		int DataLen = (int)strlen(AGWBeaconMsg);
+		int DataLen;
 
 		strcpy(ports, AGWBeaconPorts);			// strtok changes it
 
@@ -282,8 +282,9 @@ void doAGWBeacon()
 		{
 			while (ptr)
 			{
-				AGW_frame_header(Msg, atoi(ptr) - 1, 'M', 240, AGWTermCall, AGWBeaconDest, DataLen);
+				DataLen = (int)strlen(AGWBeaconMsg);
 
+				AGW_frame_header(Msg, atoi(ptr) - 1, 'M', 240, AGWTermCall, AGWBeaconDest, DataLen);
 				memcpy(&Msg[AGWHDDRRLEN], AGWBeaconMsg, DataLen);
 				DataLen += AGWHDDRRLEN;
 				AGWSock->write((char *)Msg, DataLen);
@@ -864,7 +865,8 @@ void Send_AGW_Ds_Frame(void * Sess)
 	UCHAR Msg[512];
 
 	AGW_frame_header(Msg, AGW->port, 'd', 240, AGW->corrcall, AGW->mycall, 0);
-	AGW->socket->write((char *)Msg, AGWHDDRRLEN);
+	if (AGW->socket)
+		AGW->socket->write((char *)Msg, AGWHDDRRLEN);
 }
 
 

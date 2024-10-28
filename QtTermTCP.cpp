@@ -1,6 +1,8 @@
 // Qt Version of BPQTermTCP
 
-#define VersionString "0.0.0.73"
+// Application icon design by Red PE1RRR
+
+#define VersionString "0.0.0.77 Beta 1"
 
 
 // .12 Save font weight
@@ -104,7 +106,18 @@
 //	.73 November 2023
 //	Raise RTS on KISS serial port
 
+//	.74 April 2024
+//	Support BPQKISS TNCs with CHECKSUM and/or ACKMODE enabled
 
+//	.75 May 2024
+//	Flush Monitor log file every minute
+
+//	.76	August 2024
+//	Fix using digs in KISS UI mode.
+//	Add option to send TXDELAY to KISS TNC
+
+//	.77
+//	Support multichannel KISS TNCs (Beta 1)
 
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -308,12 +321,22 @@ extern "C" int KISSMonEnable;
 extern "C" int KISSLocalTime;
 extern "C" int KISSMonNodes;
 extern "C" int KISSListen;
+extern "C" int KISSChecksum;
+extern "C" int KISSAckMode;
+
+extern "C" short txtail[5];
+extern "C" short txdelay[5];
+extern "C" int sendTXDelay[4];
+
+
 
 char SerialPort[80] = "";
 char KISSHost[128] = "127.0.0.1";
 int KISSPortNum = 1000;
 int KISSBAUD = 19200;
-char MYCALL[32];
+char KISSMYCALL[32];
+char KISSVia[128];				// Digi String
+
 extern "C" UCHAR axMYCALL[7];			// Mycall in ax.25
 
 int KISSMode = 0;			// Connected (0) or UI (1)
@@ -986,9 +1009,9 @@ Ui_ListenSession * newWindow(QObject * parent, int Type, const char * Label)
 	QSettings settings(GetConfPath(), QSettings::IniFormat);
 
 #ifdef ANDROID
-	QFont font = QFont(settings->value("FontFamily", "Driod Sans Mono").value<QString>(),
-		settings->value("PointSize", 12).toInt(),
-		settings->value("Weight", 50).toInt());
+    QFont font = QFont(settings.value("FontFamily", "Driod Sans Mono").value<QString>(),
+        settings.value("PointSize", 12).toInt(),
+        settings.value("Weight", 50).toInt());
 #else
 	QFont font = QFont(settings.value("FontFamily", "Courier New").value<QString>(),
 		settings.value("PointSize", 10).toInt(),
@@ -1642,6 +1665,10 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	connect(timer2, SIGNAL(timeout()), this, SLOT(KISSTimerSlot()));
 	timer2->start(100);
 
+	QTimer *timer3 = new QTimer(this);
+	connect(timer3, SIGNAL(timeout()), this, SLOT(SlowTimerSlot()));
+	timer3->start(60000);
+
 	// Run timer now to connect to AGW if configured
 
 	MyTimerSlot();
@@ -1657,7 +1684,7 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 		OpenPTTPort();
 
 	memset(axMYCALL, 0, 7);
-	ConvToAX25(MYCALL, axMYCALL);
+	ConvToAX25(KISSMYCALL, axMYCALL);
 
 	// Do any autoconnects
 
@@ -2726,7 +2753,8 @@ void QtTermTCP::LreturnPressed(Ui_ListenSession * Sess)
 			strcpy(Msg, Msgptr);
 			strcat(Msg, "\r");
 
-			Send_UI(0, 0xF0, MYCALL, Sess->UIDEST, (unsigned char *)Msg, (int)strlen(Msg));
+
+			Send_UI(Sess->UIPORT, 0xF0, KISSMYCALL, Sess->UIDEST, Sess->UIPATH, (unsigned char *)Msg, (int)strlen(Msg));
 
 			WritetoOutputWindowEx(Sess, (unsigned char *)Msg, (int)strlen(Msg),
 				Sess->termWindow, &Sess->OutputSaveLen, Sess->OutputSave, EchoText);		// Black
@@ -3450,6 +3478,8 @@ void getAX25Params(int chan)
 
 void GetPortSettings(int Chan)
 {
+	txdelay[Chan] = getAX25Param("TXDelay", 250).toInt();
+	sendTXDelay[Chan] = getAX25Param("sendTXDelay", 0).toInt();
 	maxframe[Chan] = getAX25Param("Maxframe", 4).toInt();
 	fracks[Chan] = getAX25Param("Retries", 10).toInt();
 	frack_time[Chan] = getAX25Param("FrackTime", 8).toInt();
@@ -3541,10 +3571,13 @@ void GetSettings()
 	KISSMonNodes = settings->value("KISSMonNodes", 0).toInt();
 
 	KISSListen = settings->value("KISSListen", 1).toInt();
-	strcpy(MYCALL, settings->value("MYCALL", "").toString().toUtf8());
+	KISSChecksum = settings->value("KISSChecksum", 0).toInt();
+	KISSAckMode = settings->value("KISSAckMode", 0).toInt();
+	strcpy(KISSMYCALL, settings->value("MYCALL", "").toString().toUtf8());
 	strcpy(KISSHost, settings->value("KISSHost", "127.0.0.1").toString().toUtf8());
 	KISSPortNum = settings->value("KISSPort", 8100).toInt();
 	KISSMode = settings->value("KISSMode", 0).toInt();
+	strcpy(KISSVia, settings->value("KISSVia", "").toString().toUtf8());
 
 	strcpy(SerialPort, settings->value("KISSSerialPort", "None").toString().toUtf8());
 	KISSBAUD = settings->value("KISSBAUD", 19200).toInt();
@@ -3647,7 +3680,8 @@ void saveAX25Params(int chan)
 
 void SavePortSettings(int Chan)
 {
-	saveAX25Param("Retries", fracks[Chan]);
+	saveAX25Param("TXDelay", txdelay[Chan]);
+	saveAX25Param("sendTXDelay", sendTXDelay[Chan]);
 	saveAX25Param("Maxframe", maxframe[Chan]);
 	saveAX25Param("Paclen", kisspaclen[Chan]);
 	saveAX25Param("FrackTime", frack_time[Chan]);
@@ -3770,12 +3804,16 @@ extern "C" void SaveSettings()
 	settings->setValue("KISSMonNodes", KISSMonNodes);
 
 	settings->setValue("KISSListen", KISSListen);
-	settings->setValue("MYCALL", MYCALL);
+	settings->setValue("KISSChecksum", KISSChecksum);
+	settings->setValue("KISSAckMode", KISSAckMode);
+	settings->setValue("MYCALL", KISSMYCALL);
 	settings->setValue("KISSHost", KISSHost);
 	settings->setValue("KISSMode", KISSMode);
 	settings->setValue("KISSPort", KISSPortNum);
 	settings->setValue("KISSSerialPort", SerialPort);
 	settings->setValue("KISSBAUD", KISSBAUD);
+	settings->setValue("KISSVia", KISSVia);
+
 	saveAX25Params(0);
 
 	settings->setValue("VARAEnable", VARAEnable);
@@ -3958,6 +3996,27 @@ void QtTermTCP::MyTimerSlot()
 
 }
 
+void QtTermTCP::SlowTimerSlot()
+{
+	// Runs every 60 S
+
+	Ui_ListenSession * Sess;
+
+	for (int i = 0; i < _sessions.size(); ++i)
+	{
+		Sess = _sessions.at(i);
+
+		if (Sess->monLogfile)
+		{
+			Sess->monLogfile->close();
+			Sess->monLogfile = nullptr;
+		}
+	}
+
+}
+
+
+
 extern "C" void myBeep(QString * WAV)
 {
 	if (useBeep)
@@ -4025,7 +4084,12 @@ void QtTermTCP::KISSSlot()
 	deviceUI = &UI;
 	KISS->KISSEnable->setChecked(KISSEnable);
 	KISS->KISSListen->setChecked(KISSListen);
-	KISS->MYCALL->setText(MYCALL);
+	KISS->KISSChecksum->setChecked(KISSChecksum);
+	KISS->KISSACKMODE->setChecked(KISSAckMode);
+	KISS->MYCALL->setText(KISSMYCALL);
+
+	KISS->TXDELAY->setText(QString::number(txdelay[0]));
+	KISS->SetTXDelay->setChecked(sendTXDelay[0]);
 
 	//	connect(KISS->SerialPort, SIGNAL(currentIndexChanged(int)), this, SLOT(PTTPortChanged(int)));
 
@@ -4079,12 +4143,14 @@ void QtTermTCP::KISSaccept()
 
 	KISSEnable = KISS->KISSEnable->isChecked();
 	KISSListen = KISS->KISSListen->isChecked();
+	KISSChecksum = KISS->KISSChecksum->isChecked();
+	KISSAckMode = KISS->KISSACKMODE->isChecked();
 	actHost[18]->setVisible(KISSEnable);			// Show KISS Connect Line
 
-	strcpy(MYCALL, KISS->MYCALL->text().toUtf8().toUpper());
+	strcpy(KISSMYCALL, KISS->MYCALL->text().toUtf8().toUpper());
 
 	memset(axMYCALL, 0, 7);
-	ConvToAX25(MYCALL, axMYCALL);
+	ConvToAX25(KISSMYCALL, axMYCALL);
 
 	Q = KISS->Port->text();
 	KISSPortNum = Q.toInt();
@@ -4106,8 +4172,11 @@ void QtTermTCP::KISSaccept()
 	Q = KISS->Retries->text();
 	fracks[0] = Q.toInt();
 
-	myStatusBar->setVisible(AGWEnable | VARAEnable | KISSEnable);
+	Q = KISS->TXDELAY->text();
+	txdelay[0] = Q.toInt();
+	sendTXDelay[0] = KISS->SetTXDelay->isChecked();
 
+	myStatusBar->setVisible(AGWEnable | VARAEnable | KISSEnable);
 
 	if (KISSEnable != OldEnable || KISSPortNum != OldPort ||
 		strcmp(oldHost, KISSHost) != 0 ||
@@ -6349,6 +6418,7 @@ void ClosePTTPort()
 #endif
 }
 
+#ifndef ANDRIOD
 
 void CM108_set_ptt(int PTTState)
 {
@@ -6413,7 +6483,7 @@ void CM108_set_ptt(int PTTState)
 
 }
 
-
+#endif
 
 void QtTermTCP::RadioPTT(bool PTTState)
 {
@@ -6651,6 +6721,16 @@ void QtTermTCP::onKISSSocketStateChanged(QAbstractSocket::SocketState socketStat
 		actHost[18]->setEnabled(1);			// Enable KISS Connect Line
 
 		KISS_add_stream(sender);
+
+		// send TXDelay if enabled
+
+		if (sendTXDelay[0])
+		{
+			unsigned char Msg[5] = { FEND, 1, 25 , FEND };
+
+			Msg[2] = txdelay[0] / 10;
+			KISSSock->write((char *)Msg, 4);
+		}
 
 		// Attach a Monitor Window if available
 
@@ -6923,6 +7003,16 @@ int QtTermTCP::openSerialPort()
 
 		KISS_add_stream(m_serial);
 
+		// send TXDelay if enabled
+
+		if (sendTXDelay[0])
+		{
+			unsigned char Msg[5] = { FEND, 1, 25 , FEND };
+
+			Msg[2] = txdelay[0] / 10;
+			m_serial->write((char *)Msg, 4);
+		}
+
 		// Attach a Monitor Window if available
 
 		Ui_ListenSession * Sess = NULL;
@@ -6937,7 +7027,7 @@ int QtTermTCP::openSerialPort()
 				S = _sessions.at(i);
 
 				//	for (Ui_ListenSession * S: _sessions)
-				//	{
+				//	
 				if ((S->SessionType == Mon) && S->clientSocket == NULL && S->KISSSession == NULL)
 				{
 					Sess = S;
@@ -7831,7 +7921,7 @@ void WriteMonitorLog(Ui_ListenSession * Sess, char * Msg)
 		Sess->monLogfile = new QFile(FN);
 
 		if (Sess->monLogfile)
-			Sess->monLogfile->open(QIODevice::WriteOnly | QIODevice::Text);
+			Sess->monLogfile->open(QIODevice::Append);
 		else
 			return;
 	}

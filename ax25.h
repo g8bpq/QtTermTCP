@@ -228,7 +228,7 @@ extern "C" void WriteDebugLog(char * Mess);
 extern "C" void SendtoTerm(Ui_ListenSession * Sess, char * Msg, int Len);
 extern "C" void ClearSessLabel(Ui_ListenSession * Sess);
 extern "C" void rst_timer(TAX25Port * AX25Sess);
-extern "C" void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, Byte *  Msg, int MsgLen);
+extern "C" void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, char * Via, Byte *  Msg, int MsgLen);
 #else
 void monitor_frame(int snd_ch, string * frame, char * code, int  tx, int excluded);
 void SendtoTerm(void * Sess, char * Msg, int Len);
@@ -236,7 +236,7 @@ void ClearSessLabel(void * Sess);
 void WriteDebugLog(char * Mess);
 void AX25_disc(TAX25Port * AX25Sess, Byte mode);
 void rst_timer(TAX25Port * AX25Sess);
-void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, Byte *  Msg, int MsgLen);
+void Send_UI(int port, Byte PID, char * CallFrom, char *CallTo, char * via, Byte *  Msg, int MsgLen);
 #endif
 
 BOOL ConvToAX25(char * callsign, unsigned char * ax25call);
