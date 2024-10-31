@@ -2,7 +2,7 @@
 
 // Application icon design by Red PE1RRR
 
-#define VersionString "0.0.0.77 Beta 1"
+#define VersionString "0.0.0.77"
 
 
 // .12 Save font weight
@@ -118,6 +118,7 @@
 
 //	.77
 //	Support multichannel KISS TNCs (Beta 1)
+//	Fix using AGW listen in single terminal mode
 
 
 #define _CRT_SECURE_NO_WARNINGS

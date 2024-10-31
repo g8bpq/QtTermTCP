@@ -588,7 +588,7 @@ void QtTermTCP::onAGWSocketStateChanged(QAbstractSocket::SocketState socketState
 		if (Sess)
 		{
 			AGWUsers->MonSess = Sess;
-			Sess->AGWSession = sender;			// Flag as in use
+//			Sess->AGWSession = sender;			// Flag as in use
 
 			if (TermMode == MDI)
 				Sess->setWindowTitle("AGW Monitor Window");
@@ -1038,9 +1038,9 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 					Sess = newWindow((QObject *)mythis, Listen, "");
 				}
 			}
-			else
+			else if (TermMode == Tabbed)
 			{
-				// Single or Tabbed - look for free session
+				// Single Tabbed - look for free session
 
 
 				for (i = 0; i < _sessions.size(); ++i)
@@ -1053,15 +1053,33 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 						break;
 					}
 				}
+			}
+			else
+			{
+				// Single - Only one available
+				S = _sessions.at(0);
 
-				if (Sess == NULL)
-				{
-					// Clear connection
-
-					return;
-				}
+				if (S->clientSocket == NULL && S->AGWSession == NULL && S->KISSSession == NULL)
+					Sess = S;
 			}
 
+			if (Sess == NULL)
+			{
+				// Clear connection by sendinf d fraame
+
+				UCHAR Msg[512];
+
+				int snd_ch = Frame->Port;
+				char * CallFrom = Frame->callfrom;
+				char * CallTo = Frame->callto;
+
+				AGW_frame_header(Msg, Frame->Port, 'd', 240, Frame->callto, Frame->callfrom, 0);
+				if (AGW->socket)
+					AGW->socket->write((char *)Msg, AGWHDDRRLEN);
+
+				return;
+			}
+		
 			if (Sess)
 			{
 				sprintf(Title, "Connected to %s", CallFrom);
