@@ -1,12 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LocalDebuggerWorkingDirectory>C:\Devprogs\BPQ32\QtTermTCP</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerWorkingDirectory>C:\DevProgs\BPQ32\Release</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
     <LocalDebuggerCommand>C:\Dev\Msdev2005\projects\QT\QtTermTCP\Win32\Debug\QtTermTCP.exe</LocalDebuggerCommand>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <LocalDebuggerWorkingDirectory>C:\Devprogs\BPQ32\QtTermTCP</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerWorkingDirectory>C:\DevProgs\BPQ32\Release</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

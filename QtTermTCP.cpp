@@ -2,7 +2,7 @@
 
 // Application icon design by Red PE1RRR
 
-#define VersionString "0.0.0.77"
+#define VersionString "0.0.0.78"
 
 
 // .12 Save font weight
@@ -10,7 +10,7 @@
 // .14 Add YAPP and Listen Mode
 // .15 Reuse windows in Listen Mode 
 // .17 MDI Version 7/1/20
-// .18 Fix input window losing focus when data arrives on other window
+// .18 Fix input window losing focus when data arrivn other window
 // .19 Fix Scrollback
 // .20 WinXP compatibility changes
 // .21 Save Window Positions
@@ -120,6 +120,9 @@
 //	Support multichannel KISS TNCs (Beta 1)
 //	Fix using AGW listen in single terminal mode
 
+//	.78
+//	Fix restoring monitor flags when connecting to current host
+
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -140,6 +143,7 @@
 #include <QActionGroup>
 #include <QtWidgets>
 #include <QColor>
+#include <QClipboard>
 #ifdef USESERIAL
 #include <QtSerialPort/QSerialPort>
 #include <QtSerialPort/QSerialPortInfo>
@@ -898,6 +902,14 @@ bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 
 				if (k->button() == Qt::RightButton)
 				{
+					// Get clipboard data and process a line at a time
+
+					QClipboard *clipboard = QGuiApplication::clipboard();
+					QString Text = clipboard->text();
+					QByteArray ba = Text.toLocal8Bit();
+					char * Msg = ba.data();
+
+
 					Sess->inputWindow->paste();
 					return true;
 				}
@@ -2847,7 +2859,8 @@ void QtTermTCP::LreturnPressed(Ui_ListenSession * Sess)
 			strcat(Msg, "\r");
 
 			Sess->clientSocket->write(Msg);
-
+			Sess->clientSocket->flush();
+//			QThread::msleep(1500);			// Try to force as separate packets
 			WritetoOutputWindowEx(Sess, (unsigned char *)Msg, (int)strlen(Msg),
 				Sess->termWindow, &Sess->OutputSaveLen, Sess->OutputSave, EchoText);		// Black
 
@@ -2881,6 +2894,23 @@ void QtTermTCP::LreturnPressed(Ui_ListenSession * Sess)
 				connect(Sess->clientSocket, SIGNAL(error(QAbstractSocket::SocketError)), this, SLOT(displayError(QAbstractSocket::SocketError)));
 				connect(Sess->clientSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
 				connect(Sess->clientSocket, SIGNAL(stateChanged(QAbstractSocket::SocketState)), this, SLOT(onSocketStateChanged(QAbstractSocket::SocketState)));
+
+
+				// Set Monitor Params for this host
+
+				sscanf(MonParams[Sess->CurrentHost], "%llx %x %x %x %x %x",
+					&Sess->portmask, &Sess->mtxparam, &Sess->mcomparam,
+					&Sess->MonitorNODES, &Sess->MonitorColour, &Sess->monUI);
+
+				Sess->mlocaltime = (Sess->mtxparam >> 7);
+				Sess->mtxparam &= 1;
+
+				MonLocalTime->setChecked(Sess->mlocaltime);
+				MonTX->setChecked(Sess->mtxparam);
+				MonSup->setChecked(Sess->mcomparam);
+				MonUI->setChecked(Sess->monUI);
+				MonNodes->setChecked(Sess->MonitorNODES);
+				MonColour->setChecked(Sess->MonitorColour);
 
 				Sess->clientSocket->connectToHost(&Host[Sess->CurrentHost][0], Port[Sess->CurrentHost]);
 			}
@@ -4672,10 +4702,15 @@ void QtTermTCP::onNewConnection()
 	datas.chop(2);
 	datas.truncate(10);				// Just in case!
 
+	strlop(datas.data(), 13);
+
+	if (datas.data()[0] == 0)
+		datas.append("UNKNOWN\0");
+
 	datas.append('\0');
 
-	sprintf(Title, "Inward Connect from %s:%d Call " + datas,
-		Host.data(), clientSocket->peerPort());
+	sprintf(Title, "Inward Connect from %s:%d Call %s",
+		Host.data(), clientSocket->peerPort(), datas.data());
 
 	if (TermMode == MDI)
 	{
