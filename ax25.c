@@ -44,7 +44,7 @@ void decode_frame(Byte * frame, int len, Byte * path, string * data,
 
 void SetSessLabel(void * Sess, char * label);
 void setMenus(int State);
-
+void MHPROC(unsigned char * Packet, int Len);
 /*
 
 unit ax25;
@@ -2626,6 +2626,8 @@ void ProcessKISSFrame(void * socket, UCHAR * Msg, int Len)
 		TXMSG = newString();
 		stringAdd(TXMSG, &Msg[1], Len - 1);		// include Control
 
+		MHPROC(TXMSG->Data, TXMSG->Length);
+		
 		analiz_frame(Chan, TXMSG, socket, 0);
 
 		free(TXMSG);
@@ -3019,6 +3021,221 @@ char * frame_monitor(string * frame, char * code, int tx_stat)
 	return FrameData;
 }
 
+typedef struct _MHSTRUC
+{
+	UCHAR MHCALL[7];
+	UCHAR MHDIGIS[7][8];
+	time_t MHTIME;
+	int MHCOUNT;
+	unsigned char MHDIGI;
+	char MHFreq[12];
+	char MHLocator[6];
+} MHSTRUC, *PMHSTRUC;
+
+
+#define MHENTRIES 30
+
+MHSTRUC MHEARD[(MHENTRIES + 1) * sizeof(MHSTRUC)] = { 0 };
+
+int CompareCalls(UCHAR * c1, UCHAR * c2)
+{
+	//	COMPARE AX25 CALLSIGNS IGNORING EXTRA BITS IN SSID
+
+	if (memcmp(c1, c2, 6))
+		return FALSE;			// No Match
+
+	if ((c1[6] & 0x1e) == (c2[6] & 0x1e))
+		return TRUE;
+
+	return FALSE;
+}
+
+static char *month[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+void * MHWindow = 0;
+void WritetoMHWindow(char * Buffer);
+int KISSMH = 0;
+
+char * FormatMH(PMHSTRUC MH)
+{
+	struct tm * TM;
+	static char MHTime[50];
+	time_t szClock;
+	char LOC[7];
+
+	memcpy(LOC, MH->MHLocator, 6);
+	LOC[6] = 0;
+
+		szClock = MH->MHTIME;
+//	else
+//		szClock = time(NULL) - MH->MHTIME;
+
+	TM = gmtime(&szClock);
+
+		sprintf(MHTime, "%s %02d %.2d:%.2d:%.2d  %s %s",
+			month[TM->tm_mon], TM->tm_mday, TM->tm_hour, TM->tm_min, TM->tm_sec, MH->MHFreq, LOC);
+
+	return MHTime;
+}
+
+
+
+
+void  MHPROC(unsigned char * Packet, int Len)
+{
+	PMHSTRUC MH = &MHEARD[0];
+	PMHSTRUC MHBASE = MH;
+	int i;
+	int OldCount = 0;
+	char Freq[64] = "";
+	char DIGI = '*';
+
+	MESSAGE Frame;
+	MESSAGE * Buffer = &Frame;
+
+	memcpy(Buffer->DEST, Packet, Len);
+
+
+	// if port has a freq associated with it use it
+
+
+	//	if (Buffer->ORIGIN[6] & 1)
+	DIGI = 0;					// Don't think we want to do this
+
+// See if in list
+
+	for (i = 0; i < MHENTRIES; i++)
+	{
+		if ((MH->MHCALL[0] == 0) || (CompareCalls(Buffer->ORIGIN, MH->MHCALL) && MH->MHDIGI == DIGI)) // Spare or our entry
+		{
+			OldCount = MH->MHCOUNT;
+			goto DoMove;
+		}
+		MH++;
+	}
+
+	//	TABLE FULL AND ENTRY NOT FOUND - MOVE DOWN ONE, AND ADD TO TOP
+
+	i = MHENTRIES - 1;
+
+	// Move others down and add at front
+DoMove:
+	if (i != 0)				// First
+		memmove(MHBASE + 1, MHBASE, i * sizeof(MHSTRUC));
+
+	memcpy(MHBASE->MHCALL, Buffer->ORIGIN, 7 * 9);		// Save Digis
+	MHBASE->MHDIGI = DIGI;
+	MHBASE->MHTIME = time(NULL);
+	MHBASE->MHCOUNT = ++OldCount;
+	strcpy(MHBASE->MHFreq, Freq);
+	MHBASE->MHLocator[0] = 0;
+
+	if (MHWindow)
+	{
+		int count = MHENTRIES;
+		int n;
+		char Normcall[20];
+		char From[10];
+		char DigiList[100];
+		char * Output;
+		int len;
+		char Digi = 0;
+		char MHPage[MHENTRIES * 100];
+		char * Bufferptr = MHPage;
+		unsigned char * ptr;
+
+		MH = &MHEARD[0];
+
+		// Note that the MHDIGIS field may contain rubbish. You have to check End of Address bit to find
+		// how many digis there are
+
+		Bufferptr += sprintf(Bufferptr, "Callsign   Last heard     Pkts RX    via Digi\r");
+		Bufferptr += sprintf(Bufferptr, "\r");
+
+		while (count--)
+		{
+			if (MH->MHCALL[0] == 0)
+				break;
+
+			Digi = 0;
+
+			len = ConvFromAX25(MH->MHCALL, Normcall);
+
+			Normcall[len++] = MH->MHDIGI;
+			Normcall[len++] = 0;
+
+			n = 8;					// Max number of digi-peaters
+
+			ptr = &MH->MHCALL[6];	// End of Address bit
+
+			Output = &DigiList[0];
+
+			if ((*ptr & 1) == 0)
+			{
+				// at least one digi
+
+				strcpy(Output, "via ");
+				Output += 4;
+
+				while ((*ptr & 1) == 0)
+				{
+					//	MORE TO COME
+
+					From[ConvFromAX25(ptr + 1, From)] = 0;
+					Output += sprintf((char *)Output, "%s", From);
+
+					ptr += 7;
+					n--;
+
+					if (n == 0)
+						break;
+
+					// See if digi actioned - put a * on last actioned
+
+					if (*ptr & 0x80)
+					{
+						if (*ptr & 1)						// if last address, must need *
+						{
+							*(Output++) = '*';
+							Digi = '*';
+						}
+
+						else
+							if ((ptr[7] & 0x80) == 0)		// Repeased by next?
+							{
+								*(Output++) = '*';			// No, so need *
+								Digi = '*';
+							}
+
+					}
+					*(Output++) = ',';
+				}
+				*(--Output) = 0;							// remove last comma
+			}
+			else
+				*(Output) = 0;
+
+			// if we used a digi set * on call and display via string
+
+
+			if (Digi)
+				Normcall[len++] = Digi;
+			else
+				DigiList[0] = 0;	// Dont show list if not used
+
+			Normcall[len++] = 0;
+
+			ptr = FormatMH(MH);
+
+			Bufferptr += sprintf(Bufferptr, "%-10s %-10s %-10d %-30s\r", Normcall, ptr, MH->MHCOUNT, DigiList);
+
+			MH++;
+		}
+
+		WritetoMHWindow(MHPage);
+	}
+	return;
+}
 
 
 

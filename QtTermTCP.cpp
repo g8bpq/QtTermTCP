@@ -2,7 +2,7 @@
 
 // Application icon design by Red PE1RRR
 
-#define VersionString "0.0.0.78"
+#define VersionString "0.0.0.79"
 
 
 // .12 Save font weight
@@ -122,6 +122,10 @@
 
 //	.78
 //	Fix restoring monitor flags when connecting to current host
+
+
+//	.79
+//	Add KISS MHEARD Window (Feb 2025)
 
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -328,6 +332,7 @@ extern "C" int KISSMonNodes;
 extern "C" int KISSListen;
 extern "C" int KISSChecksum;
 extern "C" int KISSAckMode;
+extern "C" int KISSMH;
 
 extern "C" short txtail[5];
 extern "C" short txdelay[5];
@@ -559,6 +564,7 @@ void AGWMonWindowClosing(Ui_ListenSession *Sess);
 void AGWWindowClosing(Ui_ListenSession *Sess);
 extern "C" void KISSDataReceived(void * socket, unsigned char * data, int length);
 void closeSerialPort();
+int newMHWindow(QObject * parent, int Type, const char * Label);
 
 extern void initUTF8();
 int checkUTF8(unsigned char * Msg, int Len, unsigned char * out);
@@ -736,11 +742,38 @@ void DoTermResize(Ui_ListenSession * Sess)
 	}
 }
 
+
+extern "C" Ui_ListenSession * MHWindow;
+
 bool QtTermTCP::eventFilter(QObject* obj, QEvent *event)
 {
 	// See if from a Listening Session
 
 	Ui_ListenSession * Sess;
+
+	if (obj == MHWindow)
+	{
+		if (event->type() == QEvent::Resize)
+		{
+			QRect r = MHWindow->rect();
+
+			int H, Width, Border = 3;
+
+			Width = r.width() - 6;
+			H = r.height() - 6;
+
+			MHWindow->monWindow->setGeometry(QRect(Border, Border, Width, H));
+			return true;
+		}
+		if (event->type() == QEvent::Close)
+		{
+			QSettings mysettings(GetConfPath(), QSettings::IniFormat);
+			mysettings.setValue("MHgeometry", MHWindow->saveGeometry());
+			SaveSettings();
+			MHWindow = 0;
+		}
+	}
+
 
 	for (int i = 0; i < _sessions.size(); ++i)
 	{
@@ -1335,6 +1368,12 @@ QtTermTCP::QtTermTCP(QWidget *parent) : QMainWindow(parent)
 	windowMenuSeparatorAct->setSeparator(true);
 
 	updateWindowMenu();
+
+	if (KISSEnable && KISSMH)
+	{
+		newMHWindow(this, 0, "KISS MH");
+		MHWindow->restoreGeometry(mysettings.value("MHgeometry").toByteArray());
+	}
 
 	connectMenu = mymenuBar->addMenu(tr("&Connect"));
 
@@ -3604,6 +3643,7 @@ void GetSettings()
 	KISSListen = settings->value("KISSListen", 1).toInt();
 	KISSChecksum = settings->value("KISSChecksum", 0).toInt();
 	KISSAckMode = settings->value("KISSAckMode", 0).toInt();
+	KISSMH = settings->value("KISSMH", 1).toInt();
 	strcpy(KISSMYCALL, settings->value("MYCALL", "").toString().toUtf8());
 	strcpy(KISSHost, settings->value("KISSHost", "127.0.0.1").toString().toUtf8());
 	KISSPortNum = settings->value("KISSPort", 8100).toInt();
@@ -3837,6 +3877,7 @@ extern "C" void SaveSettings()
 	settings->setValue("KISSListen", KISSListen);
 	settings->setValue("KISSChecksum", KISSChecksum);
 	settings->setValue("KISSAckMode", KISSAckMode);
+	settings->setValue("KISSMH", KISSMH);
 	settings->setValue("MYCALL", KISSMYCALL);
 	settings->setValue("KISSHost", KISSHost);
 	settings->setValue("KISSMode", KISSMode);
@@ -3921,6 +3962,10 @@ void QtTermTCP::closeEvent(QCloseEvent *event)
 #endif
 		if (process)
 			process->close();
+
+		if (MHWindow)
+			MHWindow->close();
+
 	}
 }
 
@@ -3962,6 +4007,11 @@ QtTermTCP::~QtTermTCP()
 	mysettings.setValue("geometry", saveGeometry());
 	mysettings.setValue("windowState", saveState());
 
+	if (MHWindow)
+	{
+		mysettings.setValue("MHgeometry", MHWindow->saveGeometry());
+		MHWindow->close();
+	}
 	SaveSettings();
 }
 
@@ -4117,6 +4167,7 @@ void QtTermTCP::KISSSlot()
 	KISS->KISSListen->setChecked(KISSListen);
 	KISS->KISSChecksum->setChecked(KISSChecksum);
 	KISS->KISSACKMODE->setChecked(KISSAckMode);
+	KISS->KISSMH->setChecked(KISSMH);
 	KISS->MYCALL->setText(KISSMYCALL);
 
 	KISS->TXDELAY->setText(QString::number(txdelay[0]));
@@ -4176,6 +4227,7 @@ void QtTermTCP::KISSaccept()
 	KISSListen = KISS->KISSListen->isChecked();
 	KISSChecksum = KISS->KISSChecksum->isChecked();
 	KISSAckMode = KISS->KISSACKMODE->isChecked();
+	KISSMH = KISS->KISSMH->isChecked();
 	actHost[18]->setVisible(KISSEnable);			// Show KISS Connect Line
 
 	strcpy(KISSMYCALL, KISS->MYCALL->text().toUtf8().toUpper());
@@ -4230,6 +4282,26 @@ void QtTermTCP::KISSaccept()
 				closeSerialPort();
 		}
 	}
+
+	if (KISSEnable == 0 && MHWindow)
+	{
+		MHWindow->close();
+		MHWindow = 0;
+	}
+
+	if (KISSEnable && KISSMH && MHWindow == 0)
+	{
+			newMHWindow(this, 0, "KISS MH");
+			QSettings mysettings(GetConfPath(), QSettings::IniFormat);
+			MHWindow->restoreGeometry(mysettings.value("MHgeometry").toByteArray());
+	}
+
+	if (!KISSMH && MHWindow)
+	{
+		MHWindow->close();
+		MHWindow = 0;
+	}
+
 
 	delete(KISS);
 	SaveSettings();
@@ -7988,3 +8060,106 @@ void WriteMonitorLog(Ui_ListenSession * Sess, char * Msg)
 
 }
 
+// Create MH Window
+
+
+
+int newMHWindow(QObject * parent, int Type, const char * Label)
+{
+	Ui_ListenSession * Sess = new(Ui_ListenSession);
+
+	MHWindow = Sess;
+
+	// Need to explicity initialise on Qt4
+
+	Sess->termWindow = NULL;
+	Sess->monWindow = NULL;
+	Sess->inputWindow = NULL;
+
+	Sess->StackIndex = 0;
+	Sess->InputMode = 0;
+	Sess->SlowTimer = 0;
+	Sess->MonData = 0;
+	Sess->OutputSaveLen = 0;
+	Sess->MonSaveLen = 0;
+	Sess->PortMonString[0] = 0;
+	Sess->portmask = 0;
+	Sess->portmask = 1;
+	Sess->mtxparam = 1;
+	Sess->mlocaltime = 0;
+	Sess->mcomparam = 1;
+	Sess->monUI = 0;
+	Sess->MonitorNODES = 0;
+	Sess->MonitorColour = 1;
+	Sess->CurrentHost = 0;
+
+	Sess->SessionType = Type;
+	Sess->clientSocket = NULL;
+	Sess->AGWSession = NULL;
+	Sess->AGWMonSession = NULL;
+	Sess->KISSSession = NULL;
+	Sess->KISSMode = 0;
+	Sess->TTActive = 0;
+	Sess->TTFlashToggle = 0;
+	Sess->pageBuffer[0] = 0;
+	Sess->Tab = 0;
+
+	Sess->LogMonitor = false;
+	Sess->monSpan = (char *) "<span style=white-space:pre>";
+	Sess->monLogfile = nullptr;
+	Sess->sessNo = sessNo++;
+
+	QSettings settings(GetConfPath(), QSettings::IniFormat);
+
+#ifdef ANDROID
+	QFont font = QFont(settings.value("FontFamily", "Driod Sans Mono").value<QString>(),
+		settings.value("PointSize", 12).toInt(),
+		settings.value("Weight", 50).toInt());
+#else
+	QFont font = QFont(settings.value("FontFamily", "Courier New").value<QString>(),
+		settings.value("PointSize", 10).toInt(),
+		settings.value("Weight", 50).toInt());
+#endif
+
+	Sess->monWindow = new QTextEdit(Sess);
+	Sess->monWindow->setReadOnly(1);
+	Sess->monWindow->document()->setMaximumBlockCount(10000);
+	Sess->monWindow->setFont(font);
+	Sess->monWindow->setStyleSheet(monStyleSheet);
+
+	Sess->setWindowTitle(Label);
+
+	Sess->installEventFilter(mythis);
+
+	Sess->show();
+
+
+
+	Sess->monWindow->setGeometry(QRect(2, 2, 400, 400));
+	Sess->setGeometry(QRect(400, 400, 400, 400));
+
+
+	QSize Size(800, 602);						// Not actually used, but Event constructor needs it
+
+	QResizeEvent event(Size, Size);
+
+	QApplication::sendEvent(Sess, &event);		// Resize Widgets to fix Window
+
+	return true;
+}
+
+extern "C" void WritetoMHWindow(char * Buffer)
+{
+	unsigned char Copy[8192];
+	unsigned char * ptr1, *ptr2;
+	unsigned char Line[8192];
+	unsigned char out[8192];
+	int outlen;
+
+	int num;
+
+	if (MHWindow == NULL || MHWindow->monWindow == NULL)
+		return;
+
+	MHWindow->monWindow->setText(Buffer);
+}
