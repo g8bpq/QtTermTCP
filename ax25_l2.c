@@ -844,7 +844,6 @@ void on_RR(TAX25Port * AX25Sess, Byte * path, int  nr, int  pf, int cr)
 	rst_t3(AX25Sess);
 }
 
-
 void on_RNR(TAX25Port * AX25Sess, Byte * path, int  nr, int  pf, int cr)
 {
 	UNUSED(pf);
@@ -1240,8 +1239,7 @@ void UpdateActiveConnects(int snd_ch)
 void timer_event()
 {
 	int  snd_ch, port;
-	single  frack;
-	Byte  active;
+	int frack;
 	TAX25Port * AX25Sess;
 
 	TimerEvent = TIMER_EVENT_OFF;

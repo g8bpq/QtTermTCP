@@ -1069,10 +1069,6 @@ void on_AGW_C_frame(AGWUser * AGW, struct AGWHeader * Frame, byte * Msg)
 
 				UCHAR Msg[512];
 
-				int snd_ch = Frame->Port;
-				char * CallFrom = Frame->callfrom;
-				char * CallTo = Frame->callto;
-
 				AGW_frame_header(Msg, Frame->Port, 'd', 240, Frame->callto, Frame->callfrom, 0);
 				if (AGW->socket)
 					AGW->socket->write((char *)Msg, AGWHDDRRLEN);

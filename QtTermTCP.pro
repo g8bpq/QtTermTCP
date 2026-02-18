@@ -52,3 +52,5 @@ RC_ICONS = QtTermTCP.ico
 ICONS = QtTermTCP.icns
 
 QMAKE_LFLAGS += -no-pie
+
+ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android

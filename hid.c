@@ -153,9 +153,11 @@ static hid_device *new_hid_device()
 	return dev;
 }
 
+#define UNUSED(x) (void)(x)
 
 static void register_error(hid_device *device, const char *op)
 {
+	UNUSED(op);
 	WCHAR *ptr, *msg;
 
 	FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -640,6 +642,7 @@ int HID_API_EXPORT HID_API_CALL hid_read_timeout(hid_device *dev, unsigned char 
 {
 	DWORD bytes_read = 0;
 	BOOLEAN res;
+	DWORD res1;
 
 	// Copy the handle for convenience.
 	HANDLE ev = dev->ol.hEvent;
@@ -663,8 +666,8 @@ int HID_API_EXPORT HID_API_CALL hid_read_timeout(hid_device *dev, unsigned char 
 
 	if (milliseconds >= 0) {
 		// See if there is any data yet.
-		res = WaitForSingleObject(ev, milliseconds);
-		if (res != WAIT_OBJECT_0) {
+		res1 = WaitForSingleObject(ev, milliseconds);
+		if (res1 != WAIT_OBJECT_0) {
 			// There was no data this time. Return zero bytes available,
 			// but leave the Overlapped I/O running.
 			return 0;
