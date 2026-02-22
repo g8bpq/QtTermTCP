@@ -49,7 +49,7 @@ RESOURCES += QtTermTCP.qrc
 
 RC_ICONS = QtTermTCP.ico
 
-ICONS = QtTermTCP.icns
+ICON = QtTermTCP.icns
 
 QMAKE_LFLAGS += -no-pie
 
